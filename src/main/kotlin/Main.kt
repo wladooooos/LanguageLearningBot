@@ -11,18 +11,12 @@ import org.apache.poi.ss.usermodel.WorkbookFactory
 import java.io.File
 import kotlin.random.Random
 
-// Хранение текущего состояния для каждого пользователя
-val userState = mutableMapOf<Long, Pair<String, Int>>() // <UserId, (currentRange, currentRowIndex)>
-
-// Диапазоны ячеек в порядке их обработки
 val ranges = listOf(
     "A1-A7", "B1-B7", "C1-C7", "D1-D7",
-    "A8-A14", "B8-B14", "C8-C14", "D8-D14",
-    "A15-A21", "B15-B21", "C15-C21", "D15-D21",
-    "A22-A28", "B22-B28", "C22-C28", "D22-D28",
-    "A29-A35", "B29-B35", "C29-C35", "D29-D35",
-    "A36-A42", "B36-B42", "C36-C42", "D36-D42"
+    "A8-A14", "B8-B14", "C8-C14", "D8-D14"
 )
+val userState = mutableMapOf<Long, Pair<String, Int>>() // <UserId, (currentRange, currentRowIndex)>
+
 
 fun main() {
     println("Запуск бота...") // Сообщение о запуске бота
@@ -50,145 +44,82 @@ fun main() {
             }
 
             callbackQuery { // Обработка callback-запросов
-                println("Получен callbackQuery: ${callbackQuery.data}")
-                val chatId = callbackQuery.message?.chat?.id
+                println("Получен callbackQuery: ${callbackQuery.data}") // Логируем полученный callback-запрос
+
+                val chatId = callbackQuery.message?.chat?.id // Получаем идентификатор чата из сообщения
                 if (chatId == null) {
-                    println("Ошибка: chatId не найден") // Проверка наличия chatId
-                    return@callbackQuery
-                }
-                // Получаем текущий диапазон пользователя
-                val (currentRange, currentRowIndex) = userState[chatId] ?: ranges[0] to 0
-                val nextRowIndex = currentRowIndex + 1
-
-                // Если вышли за пределы диапазонов
-                if (nextRowIndex >= ranges.size) {
-                    bot.sendMessage(
-                        chatId = ChatId.fromId(chatId),
-                        text = "Вы просмотрели все диапазоны!",
-                        replyMarkup = null
-                    )
-                    return@callbackQuery
+                    println("Ошибка: chatId не найден") // Если chatId не найден, выводим сообщение об ошибке
+                    return@callbackQuery // Завершаем выполнение этого блока
                 }
 
-                // Обновляем текущий диапазон
                 val data = callbackQuery.data // Получение данных из callback-запроса
-                val nextRange = ranges[nextRowIndex]
-                userState[chatId] = nextRange to nextRowIndex
-                // Формируем сообщение из текущего диапазона
-                val messageText = generateMessageFromRange(tableFile, "Примеры гамм для существительны", nextRange)
-                bot.sendMessage(
-                    chatId = ChatId.fromId(chatId),
-                    text = messageText,
-                    replyMarkup = InlineKeyboardMarkup.createSingleRowKeyboard(
-                        InlineKeyboardButton.CallbackData("Далее", "next:")
-                    )
-                )
-
                 if (data == null) {
-                    println("Ошибка: callbackQuery.data отсутствует") // Проверка данных
+                    println("Ошибка: callbackQuery.data отсутствует") // Если данные отсутствуют, выводим сообщение об ошибке
+                    return@callbackQuery // Завершаем выполнение этого блока
                 }
 
-                when {
-                    data.startsWith("word:") -> { val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
-                        val userId = chatId
+                if (data.startsWith("next:")) { // Если запрос содержит "next:", обрабатываем переход к следующему диапазону
+                    val (currentRange, currentRowIndex) = userState[chatId] ?: ranges[0] to 0 // Получаем текущий диапазон и индекс строки пользователя
+                    val nextRowIndex = currentRowIndex + 1 // Переходим к следующему индексу строки
 
-                        // Инициализируем пользователя с начальным диапазоном
-                        userState[userId] = ranges[0] to 0
-
-                        // Генерируем первое сообщение из диапазона A1-A7
-                        val messageText = generateMessageFromRange(tableFile, "Примеры гамм для существительны", ranges[0])
+                    if (nextRowIndex >= ranges.size) { // Проверяем, если индексы закончились
                         bot.sendMessage(
-                            chatId = ChatId.fromId(chatId),
-                            text = messageText,
-                            replyMarkup = InlineKeyboardMarkup.createSingleRowKeyboard(
-                                InlineKeyboardButton.CallbackData("Далее", "next:")
-                            )
+                            chatId = ChatId.fromId(chatId), // Отправляем сообщение в чат
+                            text = "Вы просмотрели все диапазоны!", // Сообщение пользователю, если диапазоны закончились
+                            replyMarkup = null // Убираем кнопки
                         )
+                        return@callbackQuery // Завершаем выполнение этого блока
                     }
 
-                    data.startsWith("repeat:") -> { // Обработка нажатия кнопки "Повторить"
-                        println("Пользователь запросил повтор: $data")
-                        val buttonText = data.removePrefix("repeat:").trim()
-                        val parts = buttonText.split(" - ")
-                        if (parts.size != 2) {
-                            println("Ошибка: Неверный формат текста кнопки: $buttonText")
-                            return@callbackQuery
-                        }
+                    val nextRange = ranges[nextRowIndex] // Получаем следующий диапазон
+                    userState[chatId] = nextRange to nextRowIndex // Обновляем состояние пользователя на следующий диапазон
 
-                        // Извлечение выбранных слов
-                        val wordRus = parts[0]
-                        val wordUzb = parts[1]
+                    val uzbekWord = callbackQuery.data.substringAfter("word:").substringBefore("-").trim() // Извлекаем узбекское слово из данных
+                    val russianWord = callbackQuery.data.substringAfter("-").trim() // Извлекаем русское слово из данных
 
-                        var dataA: String
-                        var dataB: String
-                        var resultA: String
-                        var resultB: String
+                    val messageText = generateMessageFromRange(tableFile, "Примеры гамм для существительны", nextRange) // Генерируем текст из следующего диапазона
+                        .replace("*", uzbekWord) // Заменяем "*" на узбекское слово
+                        .replace("#", russianWord) // Заменяем "#" на русское слово
+                        .let { "$uzbekWord ($it)" } // Формируем итоговый текст: узбекское слово идет первым, остальной текст внутри скобок
 
-                        // Повторный цикл выбора ячеек
-                        do {
-                            resultA = selectRandomCellA()
-                            println("Выбрана ячейка A: $resultA")
-                            dataA = readCellData(tableFile, "Примеры гамм для существительны", resultA)
-                            println("Прочитаны данные A: $dataA")
-
-                            resultB = selectRandomCellB(resultA)
-                            println("Выбрана ячейка B: $resultB")
-                            dataB = readCellData(tableFile, "Примеры гамм для существительны", resultB)
-
-                            if (dataB.isBlank() || dataB == "Нет данных") {
-                                println("Ячейка B ($resultB) пуста. Повторный выбор ячеек.")
-                            }
-                        } while (dataB.isBlank() || dataB == "Нет данных")
-
-                        println("Прочитаны данные B: $dataB")
-
-                        // Формирование текста сообщения
-                        val messageText = """
-        $dataA
-        ${dataB.replace("*", wordUzb).replace("#", wordRus)}
-    """.trimIndent()
-
-                        // Отправка сообщения
-                        bot.sendMessage(
-                            chatId = ChatId.fromId(chatId),
-                            text = messageText,
-                            replyMarkup = createActionKeyboard(buttonText)
+                    bot.sendMessage( // Отправляем сформированное сообщение
+                        chatId = ChatId.fromId(chatId), // Указываем ID чата
+                        text = messageText, // Текст сообщения
+                        replyMarkup = InlineKeyboardMarkup.createSingleRowKeyboard( // Добавляем кнопку "Далее"
+                            InlineKeyboardButton.CallbackData("Далее", "next:")
                         )
-                        println("Сообщение отправлено пользователю")
-                    }
+                    )
+                }
 
-                    data == "selectWord" -> { // Обработка нажатия кнопки "Выбрать новое слово"
-                        println("Пользователь запросил выбор нового слова")
+                if (callbackQuery.data?.startsWith("word:") == true || callbackQuery.data?.startsWith("next:") == false) { // Если запрос содержит "word:" и не содержит "next:", обрабатываем выбор слова
+                    val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery // Проверяем наличие chatId
+                    val userId = chatId // Идентификатор пользователя совпадает с chatId
 
-                        // Создание новой клавиатуры для выбора слова
-                        val inlineKeyboard = createWordSelectionKeyboardFromExcel(
-                            filePath = tableFile,
-                            sheetName = "Существительные"
+                    // Убираем "next:" и "word:", затем делим оставшуюся строку
+                    val processedData = data.substringAfter("next:").substringAfter("word:") // Удаляем "next:" и "word:"
+                    val uzbekWord = processedData.substringBefore("-").trim() // Берём часть до "-"
+                    val russianWord = processedData.substringAfter("-").trim() // Берём часть после "-"
+
+                    println(uzbekWord) // Вывод: uzbekWord
+                    println(russianWord) // Вывод: russianWord
+
+                    userState[userId] = ranges[0] to 0 // Устанавливаем начальный диапазон для пользователя
+
+                    val messageText = generateMessageFromRange(tableFile, "Примеры гамм для существительны", ranges[0]) // Генерируем текст из начального диапазона
+                        .replace("*", uzbekWord) // Заменяем "*" на узбекское слово
+                        .replace("#", russianWord) // Заменяем "#" на русское слово
+                        .let { "$uzbekWord ($it)" } // Формируем итоговый текст: узбекское слово идет первым, остальной текст внутри скобок
+
+                    bot.sendMessage( // Отправляем сформированное сообщение
+                        chatId = ChatId.fromId(chatId), // Указываем ID чата
+                        text = messageText, // Текст сообщения
+                        replyMarkup = InlineKeyboardMarkup.createSingleRowKeyboard( // Добавляем кнопку "Далее"
+                            InlineKeyboardButton.CallbackData("Далее", "next: ${callbackQuery.data}")
                         )
-
-                        // Отправка клавиатуры
-                        bot.sendMessage(
-                            chatId = ChatId.fromId(chatId),
-                            text = "Выберите слово:",
-                            replyMarkup = inlineKeyboard
-                        )
-                        println("Сообщение с клавиатурой выбора отправлено")
-                    }
-
-                    data == "addWord" -> { // Обработка добавления нового слова
-                        println("Пользователь запросил добавление слова")
-                        bot.sendMessage(
-                            chatId = ChatId.fromId(chatId),
-                            text = "Чтобы добавить слово, запишите его в следующем формате: \"ребенок bola\""
-                        )
-                        println("Инструкция отправлена пользователю")
-                    }
-
-                    else -> {
-                        println("Неизвестная команда callbackQuery: $data") // Если данные не совпадают с известными командами
-                    }
+                    )
                 }
             }
+
 
             message { // Обработка обычных сообщений от пользователя
                 val userInput = message.text
