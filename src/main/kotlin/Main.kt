@@ -1,401 +1,452 @@
-package com.github.kotlintelegrambot.dispatcher
+// Main.kt
 
+package com.github.kotlintelegrambot.dispatcher
+import com.github.kotlintelegrambot.entities.keyboard.KeyboardButton
 import com.github.kotlintelegrambot.bot
 import com.github.kotlintelegrambot.dispatch
-import com.github.kotlintelegrambot.dispatcher.command
 import com.github.kotlintelegrambot.dispatcher.callbackQuery
+import com.github.kotlintelegrambot.dispatcher.command
 import com.github.kotlintelegrambot.entities.ChatId
 import com.github.kotlintelegrambot.entities.keyboard.InlineKeyboardButton
 import com.github.kotlintelegrambot.entities.InlineKeyboardMarkup
 import org.apache.poi.ss.usermodel.WorkbookFactory
 import java.io.File
 import kotlin.random.Random
+import com.github.kotlintelegrambot.Bot
+import com.github.kotlintelegrambot.dispatcher.generateUsersButton
+import com.github.kotlintelegrambot.entities.KeyboardReplyMarkup
+import org.apache.poi.ss.usermodel.Cell
+import org.apache.poi.ss.usermodel.Sheet
+import com.github.kotlintelegrambot.entities.ParseMode
+import jdk.internal.org.jline.utils.InfoCmp.Capability.buttons
 
-val ranges = listOf(
-    "A1-A4", "B1-B4", "C1-C7", "D1-D7",
-    "A8-A14", "B8-B14", "C8-C14", "D8-D14",
-    "A15-A21", "B15-B21", "C15-C21", "D15-D21",
-    "A22-A23", "B22-B23", "C22-C28", "D22-D28",
-    "A29-A35", "B29-B35", "C29-C35", "D29-D35",
-    "A36-A42", "B36-B42", "C36-C42", "D36-D42"
+val stateRanges = listOf(
+    "A1-A4", "B1-B7", "C1-C7", "D1-D7", "E1-E7",
+    "A8-A14", "B8-B14", "C8-C14", "D8-D14", "E8-E14",
+    "A15-A21", "B15-B21", "C15-C21", "D15-D21", "E15-E21",
+    "A22-A23", "B22-B23", "C22-C28", "D22-D28", "E22-E28",
+    "A29-A35", "B29-B35", "C29-C35", "D29-D35", "E29-E35",
+    "A36-A42", "B36-B42", "C36-C42", "D36-D42", "E36-E42"
 )
-val userState = mutableMapOf<Long, Pair<String, Int>>() // <UserId, (currentRange, currentRowIndex)>
+
+val userStates = mutableMapOf<Long, Int>()
 
 fun main() {
-    println("Запуск бота...") // Сообщение о запуске бота
-    val tableFile = "Алгоритм 2.9.xlsx" // Имя Excel-файла с данными
+    println("1. Начало работы программы")
+    val tableFile = "Алгоритм 2.12.xlsx"
+    println("2. Указан файл таблицы: $tableFile")
+
     val bot = bot {
-        token = "7166917752:AAF0q8pmZBAmgUy_qYUMuR1gJBLaD36VSCE" // Токен бота
+        token = "7166917752:AAF0q8pmZBAmgUy_qYUMuR1gJBLaD36VSCE"
+        println("3. Токен бота установлен")
 
         dispatch {
-            command("start") { // Обработка команды /start
-                println("1. Команда /start получена")
+            println("4. Настройка обработчиков команд и коллбеков")
+            command("start") {
+                println("5. Получена команда /start от пользователя ${message.chat.id}")
 
-                // 2. Создание клавиатуры для выбора слов
-                val inlineKeyboard = createWordSelectionKeyboardFromExcel(
-                    filePath = tableFile,
-                    sheetName = "Существительные"
-                )
-                println("2. Клавиатура для выбора слов создана")
+                // Установка начального состояния пользователя
+                val userId = message.chat.id
+                println("5.1 Устанавливаем начальное состояние для пользователя $userId")
+                userStates[userId] = 0
+                println("6. Установлено начальное состояние для пользователя $userId: ${userStates[userId]}")
 
-                // 3. Отправка сообщения с клавиатурой
-                bot.sendMessage(
-                    chatId = ChatId.fromId(message.chat.id),
-                    text = "Выберите слово:",
-                    replyMarkup = inlineKeyboard
-                )
-                println("3. Сообщение с выбором слов отправлено")
+                // Отправка приветственного сообщения
+                println("6.1 Отправляем приветственное сообщение для пользователя $userId")
+                sendWelcomeMessage(userId, bot)
+                println("6.2 Приветственное сообщение успешно отправлено для пользователя $userId")
+
+                // Отправка сообщения с выбором слов
+                println("6.3 Отправляем сообщение с выбором слов для пользователя $userId")
+                sendWordMessage(userId, bot, tableFile)
+                println("6.4 Сообщение с выбором слов успешно отправлено для пользователя $userId")
             }
 
-            callbackQuery { // Обработка callback-запросов
-                println("4. Получен callbackQuery: ${callbackQuery.data}") // Логируем полученный callback-запрос
 
-                val chatId = callbackQuery.message?.chat?.id // Получаем идентификатор чата из сообщения
+            callbackQuery {
+                val chatId = callbackQuery.message?.chat?.id
                 if (chatId == null) {
-                    println("4.1. Ошибка: chatId не найден") // Если chatId не найден, выводим сообщение об ошибке
-                    return@callbackQuery // Завершаем выполнение этого блока
+                    println("7. Ошибка: chatId отсутствует в callbackQuery")
+                    return@callbackQuery
                 }
+                val data = callbackQuery.data ?: return@callbackQuery
+                println("8. Получен callbackQuery от пользователя $chatId с данными: $data")
 
-                val data = callbackQuery.data // Получение данных из callback-запроса
-                if (data == null) {
-                    println("4.2. Ошибка: callbackQuery.data отсутствует") // Если данные отсутствуют, выводим сообщение об ошибке
-                    return@callbackQuery // Завершаем выполнение этого блока
-                }
-
-                println("5. Данные из callbackQuery: $data")
-
-                val uzbekWord = data.substringAfter("word:").substringBefore("-").trim()
-                println("6. Извлечён узбекское слово: $uzbekWord")
-
-                if (data.startsWith("next:")) { // Если запрос содержит "next:", обрабатываем переход к следующему диапазону
-                    println("7. Обработка следующего диапазона")
-
-                    val cleanData = data.removePrefix("next:")
-                    println("7.1. Данные после удаления 'next:': $cleanData")
-
-                    val (currentRange, currentRowIndex) = userState[chatId] ?: ranges[0] to 0
-                    val nextRowIndex = currentRowIndex + 1
-                    println("7.2. Текущий диапазон: $currentRange, текущий индекс строки: $currentRowIndex")
-
-                    if (nextRowIndex >= ranges.size) {
-                        bot.sendMessage(
-                            chatId = ChatId.fromId(chatId),
-                            text = "Вы просмотрели все диапазоны!",
-                            replyMarkup = null
-                        )
-                        println("7.3. Все диапазоны просмотрены")
-                        return@callbackQuery
+                when {
+                    data.startsWith("word:") -> {
+                        val (wordUz, wordRus) = extractWordsFromCallback(data)
+                        println("9. Извлечены слова из callback: wordUz = $wordUz, wordRus = $wordRus")
+                        userStates[chatId] = 0
+                        println("10. Сброшено состояние для пользователя $chatId: ${userStates[chatId]}")
+                        sendStateMessage(chatId, bot, tableFile, wordUz, wordRus)
                     }
+                    data.startsWith("next:") -> {
+                        val params = data.removePrefix("next:").split(":")
+                        if (params.size == 2) {
+                            val wordUz = params[0]
+                            val wordRus = params[1]
+                            println("Извлечён коллбэк: wordUz = $wordUz, wordRus = $wordRus")
 
-                    val nextRange = ranges[nextRowIndex]
-                    userState[chatId] = nextRange to nextRowIndex
-                    println("7.4. Следующий диапазон: $nextRange, обновлён индекс строки: $nextRowIndex")
-
-                    val uzbekWord = cleanData.substringAfter("word:").substringBefore("-").trim()
-                    val russianWord = cleanData.substringAfter("-").trim()
-                    println("7.5. Узбекское слово: $uzbekWord, Русское слово: $russianWord")
-
-                    val messageText =
-                        generateMessageFromRange(tableFile, "Примеры гамм для существительны", nextRange, uzbekWord)
-                            .replace("*", uzbekWord)
-                            .replace("#", russianWord)
-                    println("7.6. Сформированный текст сообщения: $messageText")
-
-                    bot.sendMessage(
-                        chatId = ChatId.fromId(chatId),
-                        text = messageText,
-                        replyMarkup = InlineKeyboardMarkup.createSingleRowKeyboard(
-                            InlineKeyboardButton.CallbackData("Далее", "next:word:$uzbekWord - $russianWord")
-                        )
-                    )
-                    println("7.7. Сообщение отправлено")
-                }
-
-                if (callbackQuery.data?.startsWith("word:") == true || callbackQuery.data?.startsWith("next:") == false) {
-                    println("8. Обработка выбора слова")
-
-                    val processedData =
-                        data.substringAfter("next:").substringAfter("word:") // Удаляем "next:" и "word:"
-                    val uzbekWord = processedData.substringBefore("-").trim() // Берём часть до "-"
-                    val russianWord = processedData.substringAfter("-").trim() // Берём часть после "-"
-                    println("8.1. Узбекское слово: $uzbekWord, Русское слово: $russianWord")
-
-                    userState[chatId] = ranges[0] to 0 // Устанавливаем начальный диапазон для пользователя
-                    println("8.2. Установлен начальный диапазон для пользователя")
-
-                    val messageText =
-                        generateMessageFromRange(tableFile, "Примеры гамм для существительны", ranges[0], uzbekWord)
-                            .replace("*", uzbekWord)
-                            .replace("#", russianWord)
-                    println("8.3. Сформированный текст сообщения: $messageText")
-
-                    bot.sendMessage(
-                        chatId = ChatId.fromId(chatId),
-                        text = messageText,
-                        replyMarkup = InlineKeyboardMarkup.createSingleRowKeyboard(
-                            InlineKeyboardButton.CallbackData("Далее", "next: ${callbackQuery.data}")
-                        )
-                    )
-                    println("8.4. Сообщение отправлено")
-                }
-            }
-
-            message { // Обработка обычных сообщений от пользователя
-                println("9. Получено сообщение от пользователя")
-                val userInput = message.text
-                println("9.1. Текст сообщения: $userInput")
-
-                if (userInput != null && userInput.contains(" ")) { // Проверка формата ввода
-                    println("9.2. Проверка формата ввода прошла успешно")
-
-                    val parts = userInput.split(" ", limit = 2)
-                    println("9.3. Сообщение разделено на части: $parts")
-
-                    if (parts.size == 2) {
-                        val wordUzb = parts[0].trim() // Узбекское слово
-                        val wordRus = parts[1].trim() // Русское слово
-                        println("9.4. Узбекское слово: $wordUzb, Русское слово: $wordRus")
-
-                        // 10. Добавление слова в таблицу
-                        val success = addWordToExcel(
-                            filePath = tableFile,
-                            sheetName = "Существительные",
-                            wordRus = wordRus,
-                            wordUzb = wordUzb
-                        )
-                        println("10. Попытка добавить слово в таблицу: $success")
-
-                        // 11. Сообщение об успехе или ошибке
-                        if (success) {
-                            bot.sendMessage(
-                                chatId = ChatId.fromId(message.chat.id),
-                                text = "Слово \"$wordRus - $wordUzb\" добавлено.",
-                                replyMarkup = InlineKeyboardMarkup.createSingleRowKeyboard(
-                                    InlineKeyboardButton.CallbackData("Выбрать слово", "selectWord"),
-                                    InlineKeyboardButton.CallbackData("Добавить еще слово", "addWord")
-                                )
-                            )
-                            println("11. Слово \"$wordRus - $wordUzb\" успешно добавлено в таблицу")
+                            // Обновление состояния и отправка следующего сообщения
+                            val currentState = userStates[chatId] ?: 0
+                            userStates[chatId] = currentState + 1
+                            println("Обновлено состояние для пользователя $chatId: ${userStates[chatId]}")
+                            sendStateMessage(chatId, bot, tableFile, wordUz, wordRus)
                         } else {
-                            bot.sendMessage(
-                                chatId = ChatId.fromId(message.chat.id),
-                                text = "Ошибка: не удалось добавить слово. Попробуйте еще раз."
-                            )
-                            println("11. Ошибка: не удалось добавить слово \"$wordRus - $wordUzb\"")
+                            println("Ошибка: недостаточно параметров в коллбэке")
                         }
-                    } else {
-                        println("9.5. Некорректный формат ввода")
-                        bot.sendMessage(
-                            chatId = ChatId.fromId(message.chat.id),
-                            text = "Ошибка: неверный формат. Запишите слово в формате: \"ребенок bola\""
-                        )
                     }
-                } else {
-                    println("9.6. Сообщение не содержит пробела или пустое")
+                    data == "repeat" -> {
+                        println("15. Пользователь $chatId выбрал повтор")
+                        sendWordMessage(chatId, bot, tableFile)
+                    }
+                    data == "test" -> {
+                        println("16. Пользователь $chatId выбрал тест")
+                        bot.sendMessage(chatId = ChatId.fromId(chatId), text = "Тест в разработке.")
+                    }
                 }
             }
         }
     }
-    println("12. Бот начал опрос")
-    bot.startPolling() // Запуск бота
+
+    bot.startPolling()
+    println("17. Бот начал опрос")
 }
 
-fun createWordSelectionKeyboardFromExcel( // Создаёт клавиатуру для выбора слов на основе данных из Excel-файла.
-    filePath: String,
-    sheetName: String,
-    columnRus: Int = 0, // Номер колонки с русскими словами
-    columnUzb: Int = 1  // Номер колонки с узбекскими словами
-): InlineKeyboardMarkup {
-    println("13. Чтение слов для клавиатуры из файла: $filePath, лист: $sheetName")
-    val file = File(filePath) // Открываем файл
-    println("13.1. Файл успешно открыт: ${file.absolutePath}")
-    val workbook = WorkbookFactory.create(file) // Создаем Workbook из Excel-файла
-    println("13.2. Workbook успешно создан")
+fun sendWelcomeMessage(chatId: Long, bot: Bot) {
+    println("40. Отправка приветственного сообщения и пользовательской клавиатуры пользователю $chatId")
+    val keyboardMarkup = KeyboardReplyMarkup( // Создаём клавиатуру с кнопками пользователя
+        keyboard = generateUsersButton(),     // Вызываем функцию для генерации кнопок
+        resizeKeyboard = true                 // Указываем, что клавиатура должна автоматически подстраиваться под экран
+    )
+    bot.sendMessage(
+        chatId = ChatId.fromId(chatId),
+        text = """Здравствуйте!
+Я бот, помогающий изучать узбекский язык!
+                    """.trimIndent(),
+        replyMarkup = keyboardMarkup
+    )
+    println("41. Приветственное сообщение отправлено пользователю $chatId")
+}
 
-    return try {
-        val sheet = workbook.getSheet(sheetName) ?: throw IllegalArgumentException("Лист $sheetName не найден") // Проверяем лист
-        println("13.3. Лист $sheetName найден, общее количество строк: ${sheet.lastRowNum}")
+fun generateUsersButton(): List<List<KeyboardButton>> {
+    return listOf(
+        listOf(KeyboardButton("/start"))
+    )
+}
 
-        val rowsCount = sheet.lastRowNum // Получаем общее количество строк
-        val randomRows = (0..rowsCount).shuffled().take(10) // Выбираем 10 случайных строк
-        println("13.4. Выбраны случайные строки: $randomRows")
+fun sendWordMessage(chatId: Long, bot: Bot, filePath: String) {
+    println("18. Начинаем отправку меню со словами для пользователя $chatId")
 
-        val buttons = randomRows.mapNotNull { rowIndex -> // Проходим по выбранным строкам
-            println("13.5. Обработка строки с индексом $rowIndex")
-            val row = sheet.getRow(rowIndex) // Получаем строку
-            if (row != null) {
-                val wordRus = row.getCell(columnRus)?.toString()?.trim() // Читаем русское слово
-                val wordUzb = row.getCell(columnUzb)?.toString()?.trim() // Читаем узбекское слово
-                println("13.6. Русское слово: $wordRus, Узбекское слово: $wordUzb")
-
-                if (!wordRus.isNullOrBlank() && !wordUzb.isNullOrBlank()) {
-                    InlineKeyboardButton.CallbackData("$wordRus - $wordUzb", "word:$wordRus - $wordUzb") // Создаем кнопку
-                } else {
-                    println("13.7. Пропущена строка с пустыми значениями")
-                    null // Пропускаем строки с пустыми значениями
-                }
-            } else {
-                println("13.8. Строка $rowIndex отсутствует")
-                null
-            }
-        }.chunked(2) // Разбиваем кнопки на строки по 2 кнопки
-        println("13.9. Кнопки сформированы")
-
-        InlineKeyboardMarkup.create(buttons) // Создаем клавиатуру
-    } catch (e: Exception) {
-        println("13.10. Ошибка при создании клавиатуры: ${e.message}") // Логируем ошибки
-        InlineKeyboardMarkup.createSingleRowKeyboard(
-            InlineKeyboardButton.CallbackData("Ошибка загрузки данных", "error")
+    // Проверяем наличие файла
+    println("18.1 Проверяем существование файла: $filePath")
+    if (!File(filePath).exists()) {
+        println("18.2 Ошибка: Файл $filePath не найден")
+        bot.sendMessage(
+            chatId = ChatId.fromId(chatId),
+            text = "Ошибка: файл с данными не найден."
         )
-    } finally {
-        workbook.close() // Закрываем Excel файл
-        println("13.11. Workbook закрыт")
+        return
     }
-}
 
-fun addWordToExcel(filePath: String, sheetName: String, wordRus: String, wordUzb: String): Boolean { // Добавляет новое слово в указанный Excel-файл.
-    println("14. Добавление слова \"$wordRus - $wordUzb\" в файл: $filePath, лист: $sheetName")
-    val file = File(filePath) // Открываем файл
-    println("14.1. Файл успешно открыт: ${file.absolutePath}")
-    val workbook = WorkbookFactory.create(file.inputStream()) // Создаем Workbook
-    println("14.2. Workbook успешно создан")
-
-    return try {
-        val sheet = workbook.getSheet(sheetName) ?: workbook.createSheet(sheetName) // Получаем или создаем лист
-        println("14.3. Лист $sheetName успешно получен/создан")
-
-        val lastRowNum = if (sheet.physicalNumberOfRows == 0) 0 else sheet.lastRowNum + 1 // Вычисляем индекс новой строки
-        println("14.4. Индекс новой строки: $lastRowNum")
-
-        val newRow = sheet.createRow(lastRowNum) // Создаем новую строку
-        newRow.createCell(0).setCellValue(wordRus) // Добавляем русское слово в первый столбец
-        newRow.createCell(1).setCellValue(wordUzb) // Добавляем узбекское слово во второй столбец
-        println("14.5. Слово \"$wordRus - $wordUzb\" добавлено в строку $lastRowNum")
-
-        // Сохраняем изменения
-        file.outputStream().use { outputStream ->
-            workbook.write(outputStream)
-        }
-        println("14.6. Изменения сохранены в файл")
-
-        true // Успешное завершение
+    // Генерация клавиатуры
+    println("18.3 Генерируем клавиатуру из файла $filePath")
+    val inlineKeyboard = try {
+        createWordSelectionKeyboardFromExcel(filePath, "Существительные")
     } catch (e: Exception) {
-        println("14.7. Ошибка при добавлении слова: ${e.message}") // Логируем ошибки
-        false // Возвращаем false в случае ошибки
-    } finally {
-        try {
-            workbook.close() // Закрываем Workbook
-            println("14.8. Workbook закрыт")
-        } catch (e: Exception) {
-            println("14.9. Ошибка при закрытии Workbook: ${e.message}") // Логируем ошибки закрытия
-        }
+        println("18.4 Ошибка при создании клавиатуры: ${e.message}")
+        bot.sendMessage(
+            chatId = ChatId.fromId(chatId),
+            text = "Ошибка при обработке данных: ${e.message}"
+        )
+        return
+    }
+    println("18.5 Клавиатура успешно сгенерирована")
+
+    // Отправка сообщения с клавиатурой
+    println("18.6 Отправляем сообщение с выбором слов пользователю $chatId")
+    try {
+        println("18.7 Клавиатура для отправки: ${inlineKeyboard.inlineKeyboard.flatten()}")
+        bot.sendMessage(
+            chatId = ChatId.fromId(chatId),
+            text = "Выберите слово из списка:",
+            replyMarkup = inlineKeyboard
+        )
+        println("19. Сообщение с выбором слов успешно отправлено пользователю $chatId")
+    } catch (e: Exception) {
+        println("18.7 Ошибка при отправке сообщения: ${e.message}")
+        bot.sendMessage(
+            chatId = ChatId.fromId(chatId),
+            text = "Ошибка при отправке сообщения: ${e.message}"
+        )
     }
 }
 
-fun generateMessageFromRange(filePath: String, sheetName: String, range: String, uzbekWord: String): String {
-    // Создаёт сообщение на основе диапазона данных из Excel-файла.
 
-    // 15. Логируем информацию о диапазоне и файле
-    println("15. Чтение диапазона $range из файла $filePath, лист $sheetName")
+fun createWordSelectionKeyboardFromExcel(filePath: String, sheetName: String): InlineKeyboardMarkup {
+    println("20. Начинаем генерацию клавиатуры из файла: $filePath, лист: $sheetName")
 
-    val file = File(filePath) // Открываем файл по указанному пути
-    println("16. Файл для чтения: ${file.absolutePath}")
+    // Проверка существования файла
+    println("20.1 Проверяем существование файла $filePath")
+    val file = File(filePath)
+    if (!file.exists()) {
+        throw IllegalArgumentException("Файл $filePath не найден")
+    }
 
-    val workbook = WorkbookFactory.create(file) // Создаем Workbook из Excel-файла
-    println("17. Excel-файл успешно открыт")
+    // Открытие файла и проверка листа
+    println("20.2 Открываем файл Excel")
+    val workbook = try {
+        WorkbookFactory.create(file)
+    } catch (e: Exception) {
+        println("20.3 Ошибка при открытии файла: ${e.message}")
+        throw IllegalArgumentException("Ошибка при открытии файла Excel: ${e.message}")
+    }
+    println("20.4 Файл Excel успешно открыт")
 
-    return try {
-        // 18. Получаем указанный лист из Excel-файла
-        val sheet = workbook.getSheet(sheetName) ?: throw IllegalArgumentException("Лист $sheetName не найден")
-        println("18. Лист Excel найден: $sheetName")
+    val sheet = workbook.getSheet(sheetName)
+    if (sheet == null) {
+        workbook.close()
+        throw IllegalArgumentException("Лист $sheetName не найден")
+    }
+    println("21. Лист $sheetName найден, всего строк: ${sheet.lastRowNum}")
 
-        // 19. Разбиваем диапазон на начало и конец (например, "A1-A4" на "A1" и "A4")
-        val (startCell, endCell) = range.split("-")
-        println("19. Диапазон разбит: начало $startCell, конец $endCell")
+    // Выбор случайных строк
+    val randomRows = (1..sheet.lastRowNum).shuffled().take(10)
+    println("22. Выбраны случайные строки: $randomRows")
 
-        // 20. Определяем номер столбца по букве
-        val startColumnLetter = startCell.substring(0, 1) // Буква начального столбца
-        val columnIndex = startColumnLetter[0] - 'A' // Преобразование буквы в индекс столбца (A=0, B=1, ...)
-        println("20. Определён столбец: $startColumnLetter, индекс: $columnIndex")
-
-        // 21. Преобразуем строковые обозначения в индексы строк
-        val startRow = startCell.substring(1).toInt() - 1 // Индекс строки начала диапазона
-        val endRow = endCell.substring(1).toInt() - 1 // Индекс строки конца диапазона
-        println("21. Индексы строк: начало $startRow, конец $endRow")
-
-        // 22. Читаем строки из диапазона и извлекаем текст из указанного столбца каждой строки
-        val rows = (startRow..endRow).mapNotNull { rowIndex ->
-            val row = sheet.getRow(rowIndex) // Получаем строку по индексу
-            val cellValue = row?.getCell(columnIndex)?.toString()?.trim() // Читаем и очищаем текст из указанного столбца
-            val cellAddress = "${startColumnLetter}${rowIndex + 1}" // Формируем адрес ячейки
-            println("22.1. Чтение строки с индексом $rowIndex ($cellAddress): $cellValue") // Логирование
-
-            if (cellValue != null) cellAddress to cellValue else null // Возвращаем пару: адрес ячейки и её содержимое
+    // Создание кнопок
+    val buttons = randomRows.mapNotNull { rowIndex ->
+        println("22.1 Обрабатываем строку $rowIndex")
+        val row = sheet.getRow(rowIndex)
+        if (row == null) {
+            println("22.2 Строка $rowIndex отсутствует, пропускаем")
+            return@mapNotNull null
         }
-        println("23. Содержимое строк: $rows")
 
-        // 24. Обрабатываем каждую строку, добавляя адрес ячейки
-        rows.joinToString("\n") { (cellAddress, word) -> // Соединяем обработанные строки в одно сообщение
-            println("24. Обработка строки ($cellAddress): $word")
-            if (word.contains("*")) { // Если в строке есть звёздочка
-                val prefix = word.substringBefore("*").trim() // Текст перед звёздочкой
-                val suffix = word.substringAfter("*").trim() // Текст после звёздочки
-                println("24.1. Префикс: $prefix, Суффикс: $suffix")
+        val wordUz = row.getCell(0)?.toString()?.trim()
+        val wordRus = row.getCell(1)?.toString()?.trim()
+        println("23. Обработаны данные строки $rowIndex: wordUz = $wordUz, wordRus = $wordRus")
 
-                if (startColumnLetter == "C") {
-                    // Только для столбца C добавляем соединительный звук
-                    val connectingSound = determineConnectingSound(prefix, uzbekWord)
-                    println("24.2. Соединительный звук: $connectingSound")
-                    "$cellAddress: $prefix $connectingSound$uzbekWord$suffix" // Сохраняем пробел между частями
-                } else {
-                    // Для остальных столбцов просто заменяем *
-                    "$cellAddress: $prefix $uzbekWord $suffix" // Сохраняем пробел между частями
-                }
+        if (!wordUz.isNullOrBlank() && !wordRus.isNullOrBlank()) {
+            InlineKeyboardButton.CallbackData("$wordUz - $wordRus", "word:($wordUz - $wordRus)")
+        } else {
+            println("23.1 Данные строки $rowIndex некорректны, пропускаем")
+            null
+        }
+    }.chunked(2)
+
+    // Закрытие файла
+    println("24. Закрываем файл Excel")
+    workbook.close()
+    println("24.1 Файл Excel успешно закрыт")
+
+    // Генерация клавиатуры завершена
+    println("24.2 Генерация клавиатуры завершена, количество кнопок: ${buttons.size}")
+    return InlineKeyboardMarkup.create(buttons)
+}
+
+
+fun extractWordsFromCallback(data: String): Pair<String, String> {
+    println("25. Извлечение слов из callback: $data")
+    val content = data.substringAfter("word:(").substringBefore(")")
+    val wordUz = content.substringBefore(" - ").trim()
+    val wordRus = content.substringAfter(" - ").trim()
+    println("26. Извлеченные слова: wordUz = $wordUz, wordRus = $wordRus")
+    return wordUz to wordRus
+}
+
+fun sendStateMessage(chatId: Long, bot: Bot, filePath: String, wordUz: String, wordRus: String) {
+    println("27. Отправка сообщения для пользователя $chatId, состояние: ${userStates[chatId]}")
+    val currentState = userStates[chatId] ?: 0
+    val range = stateRanges[currentState]
+    println("28. Диапазон текущего состояния: $range")
+
+    // Генерация сообщения
+    val messageText = try {
+        generateMessageFromRange(filePath, "Примеры гамм для существительны", range, wordUz, wordRus)
+    } catch (e: Exception) {
+        println("28.1 Ошибка при генерации сообщения: ${e.message}")
+        bot.sendMessage(
+            chatId = ChatId.fromId(chatId),
+            text = "Ошибка при формировании сообщения: ${e.message}"
+        )
+        return
+    }
+
+    println("28.2 Сформированное сообщение:\n$messageText")
+    println("28.3 Параметры для отправки: chatId = $chatId, wordUz = $wordUz, wordRus = $wordRus")
+
+    // Отправка сообщения
+    try {
+        bot.sendMessage(
+            chatId = ChatId.fromId(chatId),
+            text = messageText,
+            parseMode = ParseMode.MARKDOWN_V2, // Указываем MarkdownV2 для поддержки спойлеров
+            replyMarkup = InlineKeyboardMarkup.createSingleRowKeyboard(
+                InlineKeyboardButton.CallbackData("Далее", "next:$wordUz:$wordRus")
+            )
+        )
+        println("29. Сообщение успешно отправлено пользователю $chatId")
+        println("29.1 Сообщение отправлено: длина = ${messageText.length}, chatId = $chatId")
+    } catch (e: Exception) {
+        println("28.4 Ошибка при отправке сообщения: ${e.message}")
+        bot.sendMessage(
+            chatId = ChatId.fromId(chatId),
+            text = "Ошибка при отправке сообщения: ${e.message}"
+        )
+    }
+}
+
+
+fun generateMessageFromRange(filePath: String, sheetName: String, range: String, wordUz: String, wordRus: String): String {
+    println("30. Генерация сообщения из диапазона: $range")
+    val file = File(filePath)
+    val workbook = WorkbookFactory.create(file)
+    val sheet = workbook.getSheet(sheetName) ?: throw IllegalArgumentException("Лист $sheetName не найден")
+    val cells = extractCellsFromRange(sheet, range)
+    println("31. Найдено ${cells.size} ячеек в диапазоне $range")
+
+    // Обработка первой ячейки (справочная информация)
+    val firstCell = cells.firstOrNull()?.toString()?.replace("\n\n", "\n")?.trim()?.escapeMarkdownV2() ?: ""
+    val blurredFirstCell = if (firstCell.isNotBlank()) "||$firstCell||" else ""
+    println("31.1 Скрытый текст первой ячейки: $blurredFirstCell")
+
+    // Обработка остальных ячеек
+    val messageBody = cells.drop(1).joinToString("\n") { cell ->
+        val content = cell.toString().replace("*", wordUz)
+        println("34.0 Исходное содержимое ячейки: $content")
+        val adjustedContent = if (cell.columnIndex == 2) adjustWordUz(content, wordUz) else content
+        println("34.2 Результат после обработки: $adjustedContent")
+        adjustedContent.replace("`", "\\`") // Экранирование обратного апострофа
+    }
+    println("32. Текст сообщения без первой ячейки:\n$messageBody")
+
+    workbook.close()
+    println("33. Файл закрыт")
+
+    // Формируем итоговое сообщение
+    val finalMessage = listOf(blurredFirstCell, messageBody).filter { it.isNotBlank() }.joinToString("\n\n")
+    println("33.1 Итоговое сообщение:\n$finalMessage")
+    return finalMessage
+}
+
+
+
+
+fun String.escapeMarkdownV2(): String {
+    return this.replace("\\", "\\\\")
+        .replace("_", "\\_")
+        .replace("*", "\\*")
+        .replace("[", "\\[")
+        .replace("]", "\\]")
+        .replace("(", "\\(")
+        .replace(")", "\\)")
+        .replace("~", "\\~")
+        .replace("`", "\\`")
+        .replace(">", "\\>")
+        .replace("#", "\\#")
+        .replace("+", "\\+")
+        .replace("-", "\\-")
+        .replace("=", "\\=")
+        .replace("|", "\\|")
+        .replace("{", "\\{")
+        .replace("}", "\\}")
+        .replace(".", "\\.")
+        .replace("!", "\\!")
+}
+
+fun adjustWordUz(content: String, wordUz: String): String {
+    val vowels = "aeiouаоиеёу"
+    val lastChar = wordUz.lastOrNull()?.lowercaseChar()
+    val nextChar = content.substringAfter("+", "").firstOrNull()?.lowercaseChar()
+
+    println("34. Обработка окончания слова: lastChar = $lastChar, nextChar = $nextChar")
+
+    // Если + отсутствует, возвращаем без изменений
+    if (!content.contains("+")) {
+        println("34.1 В строке отсутствует '+'. Возвращаем без изменений.")
+        return content
+    }
+
+    // Определяем букву для замены "+"
+    val replacement = when {
+        lastChar != null && nextChar != null &&
+                lastChar in vowels && nextChar in vowels -> "s" // Обе гласные
+        lastChar != null && nextChar != null &&
+                lastChar !in vowels && nextChar !in vowels -> "i" // Обе согласные
+        else -> "" // Если не удаётся определить, оставляем без изменений
+    }
+
+    // Заменяем "+" на определённую букву
+    val replacedContent = content.replace("+", replacement)
+    println("35. Заменённое содержимое с '+': $replacedContent")
+
+    // Проверяем, есть ли символ "*"
+    val result = if (replacedContent.contains("*")) {
+        replacedContent.replace("*", wordUz)
+    } else {
+        replacedContent
+    }
+
+    println("35.1 Изменённый текст после замены '*': $result")
+    return result
+}
+
+
+
+fun extractCellsFromRange(sheet: Sheet, range: String): List<Cell> {
+    println("36. Извлечение ячеек из диапазона: $range")
+
+    // Разделение диапазона на начало и конец
+    println("36.1 Разделение диапазона: $range")
+    val (start, end) = range.split("-").map {
+        println("36.2 Обработка части диапазона: $it")
+        it.replace(Regex("[A-Z]"), "").toInt() - 1.also { num ->
+            println("36.3 Преобразование в номер строки: $num")
+        }
+    }
+    println("36.4 Диапазон строк: от $start до $end")
+
+    // Определение индекса столбца
+    println("36.5 Определение столбца для диапазона: $range")
+    val column = range[0] - 'A'
+    println("36.6 Индекс столбца: $column")
+
+    // Извлечение ячеек из указанного диапазона
+    println("36.7 Извлечение ячеек из строк: $start-$end")
+    val cells = (start..end).mapNotNull { rowIndex ->
+        println("36.8 Обработка строки: $rowIndex")
+        val row = sheet.getRow(rowIndex)
+        if (row == null) {
+            println("36.9 Строка $rowIndex отсутствует")
+            null
+        } else {
+            val cell = row.getCell(column)
+            if (cell == null) {
+                println("36.10 Ячейка в строке $rowIndex и столбце $column отсутствует")
+                null
             } else {
-                println("24.3. Звёздочка отсутствует, возвращается оригинал")
-                "$cellAddress: $word" // Если звёздочки нет, добавляем адрес ячейки к оригиналу
+                println("36.11 Найдена ячейка: строка $rowIndex, столбец $column, значение: ${cell.toString()}")
+                cell
             }
         }
-    } catch (e: Exception) {
-        // 25. Обрабатываем ошибки при чтении или обработке Excel-файла
-        println("25. Ошибка при генерации сообщения: ${e.message}")
-        "Ошибка: не удалось обработать диапазон $range" // Возвращаем сообщение об ошибке
-    } finally {
-        workbook.close() // 26. Закрываем Workbook, чтобы освободить ресурсы
-        println("26. Excel-файл закрыт")
     }
+
+    // Итоговый результат
+    println("37. Извлечено ${cells.size} ячеек из диапазона $range")
+    return cells
 }
 
 
-fun determineConnectingSound(prefix: String, uzbekWord: String): String {
-    // Определяет, какой соединительный звук ("s" или "i") нужно вставить между корнем и узбекским словом.
-
-    // 26. Проверяем последний символ префикса
-    val lastCharPrefix = prefix.lastOrNull() // Получаем последний символ префикса
-    println("26. Последний символ префикса: $lastCharPrefix")
-
-    // 27. Проверяем первый символ узбекского слова
-    val firstCharUzbekWord = uzbekWord.firstOrNull() // Получаем первый символ узбекского слова
-    println("27. Первый символ узбекского слова: $firstCharUzbekWord")
-
-    // 28. Выбираем соединительный звук в зависимости от типа символов
-    return when {
-        lastCharPrefix.isVowel() && firstCharUzbekWord.isVowel() -> {
-            println("28. Между гласными добавляем 's'")
-            "s" // Если оба символа гласные, вставляем "s"
-        }
-        !lastCharPrefix.isVowel() && !firstCharUzbekWord.isVowel() -> {
-            println("28. Между согласными добавляем 'i'")
-            "i" // Если оба символа согласные, вставляем "i"
-        }
-        else -> {
-            println("28. Соединительный звук не добавляется")
-            "" // В остальных случаях ничего не добавляем
-        }
-    }
-}
-
-// Расширение для проверки, является ли символ гласным
-fun Char?.isVowel(): Boolean {
-    return this != null && this.lowercaseChar() in listOf('a', 'e', 'i', 'o', 'u', 'y')
+fun sendFinalMessage(chatId: Long, bot: Bot) {
+    println("38. Отправка финального сообщения для пользователя $chatId")
+    bot.sendMessage(
+        chatId = ChatId.fromId(chatId),
+        text = "Поздравляем! Вы прошли все этапы.",
+        replyMarkup = InlineKeyboardMarkup.createSingleRowKeyboard(
+            InlineKeyboardButton.CallbackData("Повторить", "repeat"),
+            InlineKeyboardButton.CallbackData("Пройти тест", "test")
+        )
+    )
+    println("39. Финальное сообщение отправлено пользователю $chatId")
 }
