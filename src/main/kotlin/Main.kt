@@ -33,7 +33,7 @@ val userStates = mutableMapOf<Long, Int>()
 
 fun main() {
     println("1. Начало работы программы")
-    val tableFile = "Алгоритм 2.12.xlsx"
+    val tableFile = "Алгоритм 2.13.xlsx"
     println("2. Указан файл таблицы: $tableFile")
 
     val bot = bot {
@@ -61,7 +61,6 @@ fun main() {
                 sendWordMessage(userId, bot, tableFile)
                 println("6.4 Сообщение с выбором слов успешно отправлено для пользователя $userId")
             }
-
 
             callbackQuery {
                 val chatId = callbackQuery.message?.chat?.id
@@ -96,13 +95,18 @@ fun main() {
                             println("Ошибка: недостаточно параметров в коллбэке")
                         }
                     }
-                    data == "repeat" -> {
-                        println("15. Пользователь $chatId выбрал повтор")
-                        sendWordMessage(chatId, bot, tableFile)
-                    }
                     data == "test" -> {
                         println("16. Пользователь $chatId выбрал тест")
                         bot.sendMessage(chatId = ChatId.fromId(chatId), text = "Тест в разработке.")
+                    }
+                    data == "new_word" -> {
+                        println("5.1 Устанавливаем начальное состояние для пользователя $chatId")
+                        userStates[chatId] = 0
+                        println("6. Установлено начальное состояние для пользователя $chatId: ${userStates[chatId]}")
+                        // Отправка сообщения с выбором слов
+                        println("6.3 Отправляем сообщение с выбором слов для пользователя $chatId")
+                        sendWordMessage(chatId, bot, tableFile)
+                        println("6.4 Сообщение с выбором слов успешно отправлено для пользователя $chatId")
                     }
                 }
             }
@@ -113,6 +117,7 @@ fun main() {
     println("17. Бот начал опрос")
 }
 
+//  Отправляет приветственное сообщение с клавиатурой пользователю.
 fun sendWelcomeMessage(chatId: Long, bot: Bot) {
     println("40. Отправка приветственного сообщения и пользовательской клавиатуры пользователю $chatId")
     val keyboardMarkup = KeyboardReplyMarkup( // Создаём клавиатуру с кнопками пользователя
@@ -129,12 +134,14 @@ fun sendWelcomeMessage(chatId: Long, bot: Bot) {
     println("41. Приветственное сообщение отправлено пользователю $chatId")
 }
 
+// Генерирует кнопки для пользовательской клавиатуры.
 fun generateUsersButton(): List<List<KeyboardButton>> {
     return listOf(
         listOf(KeyboardButton("/start"))
     )
 }
 
+// Отправляет пользователю сообщение с выбором слов, загружая данные из Excel-файла.
 fun sendWordMessage(chatId: Long, bot: Bot, filePath: String) {
     println("18. Начинаем отправку меню со словами для пользователя $chatId")
 
@@ -182,7 +189,7 @@ fun sendWordMessage(chatId: Long, bot: Bot, filePath: String) {
     }
 }
 
-
+// Генерирует клавиатуру из случайных строк указанного листа Excel.
 fun createWordSelectionKeyboardFromExcel(filePath: String, sheetName: String): InlineKeyboardMarkup {
     println("20. Начинаем генерацию клавиатуры из файла: $filePath, лист: $sheetName")
 
@@ -245,7 +252,7 @@ fun createWordSelectionKeyboardFromExcel(filePath: String, sheetName: String): I
     return InlineKeyboardMarkup.create(buttons)
 }
 
-
+// Извлекает слова из данных callback-запроса.
 fun extractWordsFromCallback(data: String): Pair<String, String> {
     println("25. Извлечение слов из callback: $data")
     val content = data.substringAfter("word:(").substringBefore(")")
@@ -255,10 +262,55 @@ fun extractWordsFromCallback(data: String): Pair<String, String> {
     return wordUz to wordRus
 }
 
+// Отправляет сообщение о текущем состоянии на основе диапазона данных Excel.
 fun sendStateMessage(chatId: Long, bot: Bot, filePath: String, wordUz: String, wordRus: String) {
     println("27. Отправка сообщения для пользователя $chatId, состояние: ${userStates[chatId]}")
     val currentState = userStates[chatId] ?: 0
-    val range = stateRanges[currentState]
+    val range = if (currentState < stateRanges.size) stateRanges[currentState] else null
+
+    if (currentState == 29) {
+        println("Достигнуто предпоследнее состояние. Отправляем два сообщения.")
+
+        // Отправка первого сообщения без кнопки "Далее"
+        val messageText = try {
+            generateMessageFromRange(filePath, "Примеры гамм для существительны", range ?: "", wordUz, wordRus)
+        } catch (e: Exception) {
+            println("28.1 Ошибка при генерации сообщения: ${e.message}")
+            bot.sendMessage(
+                chatId = ChatId.fromId(chatId),
+                text = "Ошибка при формировании сообщения: ${e.message}"
+            )
+            return
+        }
+
+        println("28.2 Сформированное сообщение (предпоследнее):\n$messageText")
+        try {
+            bot.sendMessage(
+                chatId = ChatId.fromId(chatId),
+                text = messageText,
+                parseMode = ParseMode.MARKDOWN_V2 // Без кнопки "Далее"
+            )
+            println("29.1 Предпоследнее сообщение успешно отправлено пользователю $chatId")
+        } catch (e: Exception) {
+            println("28.4 Ошибка при отправке предпоследнего сообщения: ${e.message}")
+            bot.sendMessage(
+                chatId = ChatId.fromId(chatId),
+                text = "Ошибка при отправке предпоследнего сообщения: ${e.message}"
+            )
+            return
+        }
+
+        // Отправка второго сообщения с финальными кнопками
+        sendFinalButtons(chatId, bot, wordUz, wordRus)
+        return
+    }
+
+    if (range == null) {
+        println("Достигнуто последнее состояние. Отправка финального сообщения.")
+        sendFinalButtons(chatId, bot, wordUz, wordRus)
+        return
+    }
+
     println("28. Диапазон текущего состояния: $range")
 
     // Генерация сообщения
@@ -281,13 +333,12 @@ fun sendStateMessage(chatId: Long, bot: Bot, filePath: String, wordUz: String, w
         bot.sendMessage(
             chatId = ChatId.fromId(chatId),
             text = messageText,
-            parseMode = ParseMode.MARKDOWN_V2, // Указываем MarkdownV2 для поддержки спойлеров
+            parseMode = ParseMode.MARKDOWN_V2,
             replyMarkup = InlineKeyboardMarkup.createSingleRowKeyboard(
                 InlineKeyboardButton.CallbackData("Далее", "next:$wordUz:$wordRus")
             )
         )
         println("29. Сообщение успешно отправлено пользователю $chatId")
-        println("29.1 Сообщение отправлено: длина = ${messageText.length}, chatId = $chatId")
     } catch (e: Exception) {
         println("28.4 Ошибка при отправке сообщения: ${e.message}")
         bot.sendMessage(
@@ -297,7 +348,23 @@ fun sendStateMessage(chatId: Long, bot: Bot, filePath: String, wordUz: String, w
     }
 }
 
+// Отправка последнего сообщения с тремя кнопками
+fun sendFinalButtons(chatId: Long, bot: Bot, wordUz: String, wordRus: String) {
+    bot.sendMessage(
+        chatId = ChatId.fromId(chatId),
+        text = "Вы завершили все этапы работы с этим словом. Что будем делать дальше?",
+        replyMarkup = InlineKeyboardMarkup.create(
+            listOf(
+                listOf(InlineKeyboardButton.CallbackData("Повторить со словом \"$wordUz\"", "word:($wordUz - $wordRus)")),
+                listOf(InlineKeyboardButton.CallbackData("Выбрать новое слово", "new_word")),
+                listOf(InlineKeyboardButton.CallbackData("Пройти тест", "test"))
+            )
+        )
+    )
+}
 
+
+// Генерирует сообщение из диапазона ячеек Excel и обрабатывает данные для замены символов.
 fun generateMessageFromRange(filePath: String, sheetName: String, range: String, wordUz: String, wordRus: String): String {
     println("30. Генерация сообщения из диапазона: $range")
     val file = File(filePath)
@@ -312,10 +379,20 @@ fun generateMessageFromRange(filePath: String, sheetName: String, range: String,
     println("31.1 Скрытый текст первой ячейки: $blurredFirstCell")
 
     // Обработка остальных ячеек
+    val specificRowsForE = setOf(8, 9, 12, 13, 18, 19, 20, 25, 26, 27, 31, 32, 36, 38, 40) // Индексы строк для ячеек E9, E10 и т.д.
     val messageBody = cells.drop(1).joinToString("\n") { cell ->
         val content = cell.toString().replace("*", wordUz)
         println("34.0 Исходное содержимое ячейки: $content")
-        val adjustedContent = if (cell.columnIndex == 2) adjustWordUz(content, wordUz) else content
+
+        val adjustedContent = if (
+            cell.columnIndex == 2 || // Для столбца C
+            (cell.columnIndex == 4 && specificRowsForE.contains(cell.rowIndex)) // Для конкретных ячеек столбца E
+        ) {
+            adjustWordUz(content, wordUz)
+        } else {
+            content
+        }
+
         println("34.2 Результат после обработки: $adjustedContent")
         adjustedContent.replace("`", "\\`") // Экранирование обратного апострофа
     }
@@ -330,9 +407,7 @@ fun generateMessageFromRange(filePath: String, sheetName: String, range: String,
     return finalMessage
 }
 
-
-
-
+// Экранирует символы для корректной работы формата MarkdownV2.
 fun String.escapeMarkdownV2(): String {
     return this.replace("\\", "\\\\")
         .replace("_", "\\_")
@@ -355,6 +430,7 @@ fun String.escapeMarkdownV2(): String {
         .replace("!", "\\!")
 }
 
+// Изменяет слово на основе контекста, заменяя "+" на буквы (s/i) для согласных и гласных.
 fun adjustWordUz(content: String, wordUz: String): String {
     val vowels = "aeiouаоиеёу"
     val lastChar = wordUz.lastOrNull()?.lowercaseChar()
@@ -392,8 +468,7 @@ fun adjustWordUz(content: String, wordUz: String): String {
     return result
 }
 
-
-
+// Извлекает ячейки из указанного диапазона Excel для дальнейшей обработки.
 fun extractCellsFromRange(sheet: Sheet, range: String): List<Cell> {
     println("36. Извлечение ячеек из диапазона: $range")
 
@@ -437,7 +512,7 @@ fun extractCellsFromRange(sheet: Sheet, range: String): List<Cell> {
     return cells
 }
 
-
+// Отправляет финальное сообщение пользователю с возможностью выбора следующего действия.
 fun sendFinalMessage(chatId: Long, bot: Bot) {
     println("38. Отправка финального сообщения для пользователя $chatId")
     bot.sendMessage(
