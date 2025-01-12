@@ -18,95 +18,123 @@ import com.github.kotlintelegrambot.entities.KeyboardReplyMarkup
 import org.apache.poi.ss.usermodel.Cell
 import org.apache.poi.ss.usermodel.Sheet
 import com.github.kotlintelegrambot.entities.ParseMode
-import jdk.internal.org.jline.utils.InfoCmp.Capability.buttons
+import org.apache.poi.ss.usermodel.CellType
+import org.apache.poi.ss.usermodel.Row
+import java.io.FileOutputStream
 
-val stateRanges = listOf(
-    "A1-A4", "B1-B7", "C1-C7", "D1-D7", "E1-E7",
-    "A8-A14", "B8-B14", "C8-C14", "D8-D14", "E8-E14",
-    "A15-A21", "B15-B21", "C15-C21", "D15-D21", "E15-E21",
-    "A22-A23", "B22-B23", "C22-C28", "D22-D28", "E22-E28",
-    "A29-A35", "B29-B35", "C29-C35", "D29-D35", "E29-E35",
-    "A36-A42", "B36-B42", "C36-C42", "D36-D42", "E36-E42"
+val caseRanges = mapOf(
+    "Именительный" to listOf("A1-A4", "B1-B7", "C1-C7", "D1-D7", "E1-E7"),
+    "Родительный" to listOf("A8-A9", "B8-B14", "C8-C14", "D8-D14", "E8-E14"),
+    "Винительный" to listOf("A15-A21", "B15-B21", "C15-C21", "D15-D21", "E15-E21"),
+    "Дательный" to listOf("A22-A28", "B22-B28", "C22-C28", "D22-D28", "E22-E28"),
+    "Местный" to listOf("A29-A35", "B29-B35", "C29-C35", "D29-D35", "E29-E35"),
+    "Исходный" to listOf("A36-A42", "B36-B42", "C36-C42", "D36-D42", "E36-E42")
 )
 
 val userStates = mutableMapOf<Long, Int>()
+val userCases = mutableMapOf<Long, String>() // Хранение выбранного падежа для каждого пользователя
+val userWords = mutableMapOf<Long, Pair<String, String>>() // Хранение выбранного слова для каждого пользователя
+val tableFile = "Алгоритм 3.3.xlsx"
 
 fun main() {
-    println("1. Начало работы программы")
-    val tableFile = "Алгоритм 2.13.xlsx"
-    println("2. Указан файл таблицы: $tableFile")
 
     val bot = bot {
         token = "7166917752:AAF0q8pmZBAmgUy_qYUMuR1gJBLaD36VSCE"
-        println("3. Токен бота установлен")
 
         dispatch {
-            println("4. Настройка обработчиков команд и коллбеков")
             command("start") {
-                println("5. Получена команда /start от пользователя ${message.chat.id}")
-
-                // Установка начального состояния пользователя
                 val userId = message.chat.id
-                println("5.1 Устанавливаем начальное состояние для пользователя $userId")
+                println("🔍 Команда /start от пользователя: $userId")
                 userStates[userId] = 0
-                println("6. Установлено начальное состояние для пользователя $userId: ${userStates[userId]}")
-
-                // Отправка приветственного сообщения
-                println("6.1 Отправляем приветственное сообщение для пользователя $userId")
+                userWords.remove(userId) // Удаляем старые данные о слове
                 sendWelcomeMessage(userId, bot)
-                println("6.2 Приветственное сообщение успешно отправлено для пользователя $userId")
-
-                // Отправка сообщения с выбором слов
-                println("6.3 Отправляем сообщение с выбором слов для пользователя $userId")
-                sendWordMessage(userId, bot, tableFile)
-                println("6.4 Сообщение с выбором слов успешно отправлено для пользователя $userId")
+                sendCaseSelection(userId, bot, tableFile) // Добавляем tableFile как filePath
             }
 
             callbackQuery {
-                val chatId = callbackQuery.message?.chat?.id
-                if (chatId == null) {
-                    println("7. Ошибка: chatId отсутствует в callbackQuery")
-                    return@callbackQuery
-                }
+                val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
                 val data = callbackQuery.data ?: return@callbackQuery
-                println("8. Получен callbackQuery от пользователя $chatId с данными: $data")
+                println("🔍 Получен callback от пользователя: $chatId, данные: $data")
+
+                println("🔍 Обработка callbackQuery: $data для пользователя $chatId")
 
                 when {
+                    data.startsWith("case:") -> {
+                        val selectedCase = data.removePrefix("case:")
+                        println("✅ Выбранный падеж: $selectedCase")
+                        userCases[chatId] = selectedCase
+                        bot.sendMessage(
+                            chatId = ChatId.fromId(chatId),
+                            text = "Вы выбрали: $selectedCase."
+                        )
+                        if (userWords.containsKey(chatId)) {
+                            val (wordUz, wordRus) = userWords[chatId]!!
+                            userStates[chatId] = 0
+                            bot.sendMessage(
+                                chatId = ChatId.fromId(chatId),
+                                text = "Начнем с уже выбранного слова: $wordUz ($wordRus)."
+                            )
+                            sendStateMessage(chatId, bot, tableFile, wordUz, wordRus)
+                        } else {
+                            bot.sendMessage(
+                                chatId = ChatId.fromId(chatId),
+                                text = "Теперь выберите слово."
+                            )
+                            sendWordMessage(chatId, bot, tableFile)
+                        }
+                    }
                     data.startsWith("word:") -> {
+                        println("🔍 Выбор слова: $data")
                         val (wordUz, wordRus) = extractWordsFromCallback(data)
-                        println("9. Извлечены слова из callback: wordUz = $wordUz, wordRus = $wordRus")
+                        println("✅ Выбранное слово: $wordUz ($wordRus)")
+                        userWords[chatId] = Pair(wordUz, wordRus)
                         userStates[chatId] = 0
-                        println("10. Сброшено состояние для пользователя $chatId: ${userStates[chatId]}")
                         sendStateMessage(chatId, bot, tableFile, wordUz, wordRus)
                     }
                     data.startsWith("next:") -> {
+                        println("🔍 Обработка кнопки 'Далее': $data")
                         val params = data.removePrefix("next:").split(":")
                         if (params.size == 2) {
                             val wordUz = params[0]
                             val wordRus = params[1]
-                            println("Извлечён коллбэк: wordUz = $wordUz, wordRus = $wordRus")
-
-                            // Обновление состояния и отправка следующего сообщения
                             val currentState = userStates[chatId] ?: 0
+                            println("🔎 Текущее состояние: $currentState. Обновляем.")
                             userStates[chatId] = currentState + 1
-                            println("Обновлено состояние для пользователя $chatId: ${userStates[chatId]}")
                             sendStateMessage(chatId, bot, tableFile, wordUz, wordRus)
-                        } else {
-                            println("Ошибка: недостаточно параметров в коллбэке")
                         }
                     }
+                    data.startsWith("repeat:") -> {
+                        println("🔍 Обработка кнопки 'Повторить': $data")
+                        val params = data.removePrefix("repeat:").split(":")
+                        if (params.size == 2) {
+                            val wordUz = params[0]
+                            val wordRus = params[1]
+                            userStates[chatId] = 0
+                            sendStateMessage(chatId, bot, tableFile, wordUz, wordRus)
+                        }
+                    }
+                    data == "change_word" -> {
+                        println("🔍 Выбор нового слова для пользователя: $chatId")
+                        userStates[chatId] = 0
+                        sendWordMessage(chatId, bot, tableFile)
+                    }
+                    data == "change_case" -> {
+                        println("🔍 Выбор нового падежа для пользователя: $chatId")
+                        sendCaseSelection(chatId, bot, tableFile)
+                    }
+                    data == "reset" -> {
+                        println("🔍 Полный сброс данных для пользователя: $chatId")
+                        userWords.remove(chatId)
+                        userCases.remove(chatId)
+                        userStates.remove(chatId)
+                        sendCaseSelection(chatId, bot, tableFile)
+                    }
                     data == "test" -> {
-                        println("16. Пользователь $chatId выбрал тест")
+                        println("🔍 Запрос на тестовую функцию от пользователя: $chatId")
                         bot.sendMessage(chatId = ChatId.fromId(chatId), text = "Тест в разработке.")
                     }
-                    data == "new_word" -> {
-                        println("5.1 Устанавливаем начальное состояние для пользователя $chatId")
-                        userStates[chatId] = 0
-                        println("6. Установлено начальное состояние для пользователя $chatId: ${userStates[chatId]}")
-                        // Отправка сообщения с выбором слов
-                        println("6.3 Отправляем сообщение с выбором слов для пользователя $chatId")
-                        sendWordMessage(chatId, bot, tableFile)
-                        println("6.4 Сообщение с выбором слов успешно отправлено для пользователя $chatId")
+                    else -> {
+                        println("⚠️ Неизвестный callbackQuery: $data")
                     }
                 }
             }
@@ -114,41 +142,60 @@ fun main() {
     }
 
     bot.startPolling()
-    println("17. Бот начал опрос")
+}
+// sendCaseSelection: Отправляет пользователю клавиатуру для выбора падежа.
+fun sendCaseSelection(chatId: Long, bot: Bot, filePath: String) {
+    println("🔍 Формируем меню выбора падежей для пользователя: $chatId")
+    val showNextStep = checkUserState(chatId, filePath)
+    println("🔎 Проверка состояния завершена. Добавить кнопку 'Следующий шаг': $showNextStep")
+
+    val buttons = mutableListOf(
+        listOf(InlineKeyboardButton.CallbackData("Именительный падеж", "case:Именительный")),
+        listOf(InlineKeyboardButton.CallbackData("Родительный падеж", "case:Родительный")),
+        listOf(InlineKeyboardButton.CallbackData("Винительный падеж", "case:Винительный")),
+        listOf(InlineKeyboardButton.CallbackData("Дательный падеж", "case:Дательный")),
+        listOf(InlineKeyboardButton.CallbackData("Местный падеж", "case:Местный")),
+        listOf(InlineKeyboardButton.CallbackData("Исходный падеж", "case:Исходный"))
+    )
+
+    if (showNextStep) {
+        println("✅ Добавляем кнопку 'Следующий шаг'")
+        buttons.add(listOf(InlineKeyboardButton.CallbackData("Следующий шаг", "next_step")))
+    }
+
+    bot.sendMessage(
+        chatId = ChatId.fromId(chatId),
+        text = "Выберите падеж для изучения:",
+        replyMarkup = InlineKeyboardMarkup.create(buttons)
+    )
 }
 
-//  Отправляет приветственное сообщение с клавиатурой пользователю.
+
+
+// sendWelcomeMessage: Отправляет приветственное сообщение с кнопкой /start.
 fun sendWelcomeMessage(chatId: Long, bot: Bot) {
-    println("40. Отправка приветственного сообщения и пользовательской клавиатуры пользователю $chatId")
-    val keyboardMarkup = KeyboardReplyMarkup( // Создаём клавиатуру с кнопками пользователя
-        keyboard = generateUsersButton(),     // Вызываем функцию для генерации кнопок
-        resizeKeyboard = true                 // Указываем, что клавиатура должна автоматически подстраиваться под экран
+    val keyboardMarkup = KeyboardReplyMarkup(
+        keyboard = generateUsersButton(),
+        resizeKeyboard = true
     )
     bot.sendMessage(
         chatId = ChatId.fromId(chatId),
         text = """Здравствуйте!
-Я бот, помогающий изучать узбекский язык!
-                    """.trimIndent(),
+Я бот, помогающий изучать узбекский язык!""",
         replyMarkup = keyboardMarkup
     )
-    println("41. Приветственное сообщение отправлено пользователю $chatId")
 }
 
-// Генерирует кнопки для пользовательской клавиатуры.
+// generateUsersButton: Генерирует кнопку /start для быстрого доступа.
 fun generateUsersButton(): List<List<KeyboardButton>> {
     return listOf(
         listOf(KeyboardButton("/start"))
     )
 }
 
-// Отправляет пользователю сообщение с выбором слов, загружая данные из Excel-файла.
+// sendWordMessage: Отправляет клавиатуру с выбором слов.
 fun sendWordMessage(chatId: Long, bot: Bot, filePath: String) {
-    println("18. Начинаем отправку меню со словами для пользователя $chatId")
-
-    // Проверяем наличие файла
-    println("18.1 Проверяем существование файла: $filePath")
     if (!File(filePath).exists()) {
-        println("18.2 Ошибка: Файл $filePath не найден")
         bot.sendMessage(
             chatId = ChatId.fromId(chatId),
             text = "Ошибка: файл с данными не найден."
@@ -156,180 +203,143 @@ fun sendWordMessage(chatId: Long, bot: Bot, filePath: String) {
         return
     }
 
-    // Генерация клавиатуры
-    println("18.3 Генерируем клавиатуру из файла $filePath")
     val inlineKeyboard = try {
         createWordSelectionKeyboardFromExcel(filePath, "Существительные")
     } catch (e: Exception) {
-        println("18.4 Ошибка при создании клавиатуры: ${e.message}")
         bot.sendMessage(
             chatId = ChatId.fromId(chatId),
             text = "Ошибка при обработке данных: ${e.message}"
         )
         return
     }
-    println("18.5 Клавиатура успешно сгенерирована")
 
-    // Отправка сообщения с клавиатурой
-    println("18.6 Отправляем сообщение с выбором слов пользователю $chatId")
-    try {
-        println("18.7 Клавиатура для отправки: ${inlineKeyboard.inlineKeyboard.flatten()}")
-        bot.sendMessage(
-            chatId = ChatId.fromId(chatId),
-            text = "Выберите слово из списка:",
-            replyMarkup = inlineKeyboard
-        )
-        println("19. Сообщение с выбором слов успешно отправлено пользователю $chatId")
-    } catch (e: Exception) {
-        println("18.7 Ошибка при отправке сообщения: ${e.message}")
-        bot.sendMessage(
-            chatId = ChatId.fromId(chatId),
-            text = "Ошибка при отправке сообщения: ${e.message}"
-        )
-    }
+    bot.sendMessage(
+        chatId = ChatId.fromId(chatId),
+        text = "Выберите слово из списка:",
+        replyMarkup = inlineKeyboard
+    )
 }
 
-// Генерирует клавиатуру из случайных строк указанного листа Excel.
+// createWordSelectionKeyboardFromExcel: Создает клавиатуру из данных в Excel-файле.
 fun createWordSelectionKeyboardFromExcel(filePath: String, sheetName: String): InlineKeyboardMarkup {
-    println("20. Начинаем генерацию клавиатуры из файла: $filePath, лист: $sheetName")
+    println("🔍 Начало создания клавиатуры из файла: $filePath, лист: $sheetName")
 
     // Проверка существования файла
-    println("20.1 Проверяем существование файла $filePath")
+    println("🔎 Проверяем существование файла $filePath")
     val file = File(filePath)
     if (!file.exists()) {
+        println("❌ Файл $filePath не найден")
         throw IllegalArgumentException("Файл $filePath не найден")
     }
+    println("✅ Файл найден: $filePath")
 
-    // Открытие файла и проверка листа
-    println("20.2 Открываем файл Excel")
-    val workbook = try {
-        WorkbookFactory.create(file)
-    } catch (e: Exception) {
-        println("20.3 Ошибка при открытии файла: ${e.message}")
-        throw IllegalArgumentException("Ошибка при открытии файла Excel: ${e.message}")
-    }
-    println("20.4 Файл Excel успешно открыт")
-
+    // Открытие файла и получение листа
+    println("📂 Открываем файл Excel")
+    val workbook = WorkbookFactory.create(file)
     val sheet = workbook.getSheet(sheetName)
-    if (sheet == null) {
-        workbook.close()
-        throw IllegalArgumentException("Лист $sheetName не найден")
-    }
-    println("21. Лист $sheetName найден, всего строк: ${sheet.lastRowNum}")
+        ?: throw IllegalArgumentException("❌ Лист $sheetName не найден")
+    println("✅ Лист найден: $sheetName")
 
-    // Выбор случайных строк
+    println("📜 Всего строк в листе: ${sheet.lastRowNum + 1}")
+
+    // Генерация случайных строк
+    println("🎲 Генерация случайных строк для кнопок")
     val randomRows = (1..sheet.lastRowNum).shuffled().take(10)
-    println("22. Выбраны случайные строки: $randomRows")
+    println("🎲 Выбраны строки: $randomRows")
 
     // Создание кнопок
+    println("🔨 Начинаем обработку строк для создания кнопок")
     val buttons = randomRows.mapNotNull { rowIndex ->
-        println("22.1 Обрабатываем строку $rowIndex")
         val row = sheet.getRow(rowIndex)
         if (row == null) {
-            println("22.2 Строка $rowIndex отсутствует, пропускаем")
+            println("⚠️ Строка $rowIndex отсутствует, пропускаем")
             return@mapNotNull null
         }
 
         val wordUz = row.getCell(0)?.toString()?.trim()
         val wordRus = row.getCell(1)?.toString()?.trim()
-        println("23. Обработаны данные строки $rowIndex: wordUz = $wordUz, wordRus = $wordRus")
 
-        if (!wordUz.isNullOrBlank() && !wordRus.isNullOrBlank()) {
-            InlineKeyboardButton.CallbackData("$wordUz - $wordRus", "word:($wordUz - $wordRus)")
-        } else {
-            println("23.1 Данные строки $rowIndex некорректны, пропускаем")
-            null
+        if (wordUz.isNullOrBlank() || wordRus.isNullOrBlank()) {
+            println("⚠️ Некорректные данные в строке $rowIndex: wordUz = $wordUz, wordRus = $wordRus. Пропускаем")
+            return@mapNotNull null
         }
-    }.chunked(2)
+
+        println("✅ Обработана строка $rowIndex: wordUz = $wordUz, wordRus = $wordRus")
+        InlineKeyboardButton.CallbackData("$wordUz - $wordRus", "word:($wordUz - $wordRus)")
+    }.chunked(2) // Группируем кнопки по 2 в строке
+
+    println("✅ Кнопки успешно созданы. Количество строк кнопок: ${buttons.size}")
 
     // Закрытие файла
-    println("24. Закрываем файл Excel")
+    println("📕 Закрываем файл Excel")
     workbook.close()
-    println("24.1 Файл Excel успешно закрыт")
+    println("✅ Файл Excel успешно закрыт")
 
     // Генерация клавиатуры завершена
-    println("24.2 Генерация клавиатуры завершена, количество кнопок: ${buttons.size}")
+    println("🔑 Генерация клавиатуры завершена")
     return InlineKeyboardMarkup.create(buttons)
 }
 
-// Извлекает слова из данных callback-запроса.
+// extractWordsFromCallback: Извлекает узбекское и русское слово из callback data.
 fun extractWordsFromCallback(data: String): Pair<String, String> {
-    println("25. Извлечение слов из callback: $data")
     val content = data.substringAfter("word:(").substringBefore(")")
     val wordUz = content.substringBefore(" - ").trim()
     val wordRus = content.substringAfter(" - ").trim()
-    println("26. Извлеченные слова: wordUz = $wordUz, wordRus = $wordRus")
     return wordUz to wordRus
 }
 
-// Отправляет сообщение о текущем состоянии на основе диапазона данных Excel.
+// sendStateMessage: Отправляет сообщение по текущему состоянию и падежу.
 fun sendStateMessage(chatId: Long, bot: Bot, filePath: String, wordUz: String, wordRus: String) {
-    println("27. Отправка сообщения для пользователя $chatId, состояние: ${userStates[chatId]}")
+    println("🔍 Формируем сообщение для пользователя: $chatId, слово: $wordUz, перевод: $wordRus")
+
+    val selectedCase = userCases[chatId]
+    if (selectedCase == null) {
+        println("❌ Ошибка: выбранный падеж отсутствует.")
+        bot.sendMessage(chatId = ChatId.fromId(chatId), text = "Ошибка: выберите падеж.")
+        return
+    }
+
+    println("✅ Выбранный падеж: $selectedCase")
+
+    val rangesForCase = caseRanges[selectedCase]
+    if (rangesForCase == null) {
+        println("❌ Ошибка: диапазоны для падежа $selectedCase отсутствуют.")
+        bot.sendMessage(chatId = ChatId.fromId(chatId), text = "Ошибка: диапазоны для падежа не найдены.")
+        return
+    }
+
     val currentState = userStates[chatId] ?: 0
-    val range = if (currentState < stateRanges.size) stateRanges[currentState] else null
+    println("🔎 Текущее состояние: $currentState")
 
-    if (currentState == 29) {
-        println("Достигнуто предпоследнее состояние. Отправляем два сообщения.")
-
-        // Отправка первого сообщения без кнопки "Далее"
-        val messageText = try {
-            generateMessageFromRange(filePath, "Примеры гамм для существительны", range ?: "", wordUz, wordRus)
-        } catch (e: Exception) {
-            println("28.1 Ошибка при генерации сообщения: ${e.message}")
-            bot.sendMessage(
-                chatId = ChatId.fromId(chatId),
-                text = "Ошибка при формировании сообщения: ${e.message}"
-            )
-            return
-        }
-
-        println("28.2 Сформированное сообщение (предпоследнее):\n$messageText")
-        try {
-            bot.sendMessage(
-                chatId = ChatId.fromId(chatId),
-                text = messageText,
-                parseMode = ParseMode.MARKDOWN_V2 // Без кнопки "Далее"
-            )
-            println("29.1 Предпоследнее сообщение успешно отправлено пользователю $chatId")
-        } catch (e: Exception) {
-            println("28.4 Ошибка при отправке предпоследнего сообщения: ${e.message}")
-            bot.sendMessage(
-                chatId = ChatId.fromId(chatId),
-                text = "Ошибка при отправке предпоследнего сообщения: ${e.message}"
-            )
-            return
-        }
-
-        // Отправка второго сообщения с финальными кнопками
-        sendFinalButtons(chatId, bot, wordUz, wordRus)
+    if (currentState >= rangesForCase.size) {
+        println("✅ Все этапы завершены для падежа: $selectedCase")
+        addScoreForCase(chatId, selectedCase, filePath)
+        sendFinalButtons(chatId, bot, wordUz, wordRus, filePath)
         return
     }
 
-    if (range == null) {
-        println("Достигнуто последнее состояние. Отправка финального сообщения.")
-        sendFinalButtons(chatId, bot, wordUz, wordRus)
-        return
-    }
+    val range = rangesForCase[currentState]
+    println("🔍 Генерация сообщения для диапазона: $range")
 
-    println("28. Диапазон текущего состояния: $range")
-
-    // Генерация сообщения
     val messageText = try {
         generateMessageFromRange(filePath, "Примеры гамм для существительны", range, wordUz, wordRus)
     } catch (e: Exception) {
-        println("28.1 Ошибка при генерации сообщения: ${e.message}")
-        bot.sendMessage(
-            chatId = ChatId.fromId(chatId),
-            text = "Ошибка при формировании сообщения: ${e.message}"
-        )
+        println("❌ Ошибка при генерации сообщения: ${e.message}")
+        bot.sendMessage(chatId = ChatId.fromId(chatId), text = "Ошибка при формировании сообщения.")
         return
     }
 
-    println("28.2 Сформированное сообщение:\n$messageText")
-    println("28.3 Параметры для отправки: chatId = $chatId, wordUz = $wordUz, wordRus = $wordRus")
-
-    // Отправка сообщения
-    try {
+    println("✅ Сообщение сгенерировано.")
+    if (currentState == rangesForCase.size - 1) {
+        bot.sendMessage(
+            chatId = ChatId.fromId(chatId),
+            text = messageText,
+            parseMode = ParseMode.MARKDOWN_V2
+        )
+        println("✅ Последний этап завершен. Добавляем балл и отправляем финальное меню.")
+        addScoreForCase(chatId, selectedCase, filePath)
+        sendFinalButtons(chatId, bot, wordUz, wordRus, filePath)
+    } else {
         bot.sendMessage(
             chatId = ChatId.fromId(chatId),
             text = messageText,
@@ -338,76 +348,61 @@ fun sendStateMessage(chatId: Long, bot: Bot, filePath: String, wordUz: String, w
                 InlineKeyboardButton.CallbackData("Далее", "next:$wordUz:$wordRus")
             )
         )
-        println("29. Сообщение успешно отправлено пользователю $chatId")
-    } catch (e: Exception) {
-        println("28.4 Ошибка при отправке сообщения: ${e.message}")
-        bot.sendMessage(
-            chatId = ChatId.fromId(chatId),
-            text = "Ошибка при отправке сообщения: ${e.message}"
-        )
     }
 }
 
-// Отправка последнего сообщения с тремя кнопками
-fun sendFinalButtons(chatId: Long, bot: Bot, wordUz: String, wordRus: String) {
+// sendFinalButtons: Отправляет клавиатуру с финальными вариантами действий.
+fun sendFinalButtons(chatId: Long, bot: Bot, wordUz: String, wordRus: String, filePath: String) {
+    println("🔍 Формируем меню финальных действий для пользователя $chatId")
+    val showNextStep = checkUserState(chatId, filePath) // Проверяем состояние пользователя
+    println("🔎 Состояние пользователя. Добавить кнопку 'Следующий шаг': $showNextStep")
+
+    val buttons = mutableListOf(
+        listOf(InlineKeyboardButton.CallbackData("Повторить", "repeat:$wordUz:$wordRus")),
+        listOf(InlineKeyboardButton.CallbackData("Изменить слово", "change_word")),
+        listOf(InlineKeyboardButton.CallbackData("Изменить падеж", "change_case")),
+        listOf(InlineKeyboardButton.CallbackData("Изменить падеж и слово", "reset"))
+    )
+
+    // Добавляем кнопку "Следующий шаг", если все условия выполнены
+    if (showNextStep) {
+        println("✅ Добавляем кнопку 'Следующий шаг'")
+        buttons.add(listOf(InlineKeyboardButton.CallbackData("Следующий шаг", "next_step")))
+    }
+
     bot.sendMessage(
         chatId = ChatId.fromId(chatId),
-        text = "Вы завершили все этапы работы с этим словом. Что будем делать дальше?",
-        replyMarkup = InlineKeyboardMarkup.create(
-            listOf(
-                listOf(InlineKeyboardButton.CallbackData("Повторить со словом \"$wordUz\"", "word:($wordUz - $wordRus)")),
-                listOf(InlineKeyboardButton.CallbackData("Выбрать новое слово", "new_word")),
-                listOf(InlineKeyboardButton.CallbackData("Пройти тест", "test"))
-            )
-        )
+        text = "Вы завершили все этапы работы с этим словом и падежом. Что будем делать дальше?",
+        replyMarkup = InlineKeyboardMarkup.create(buttons)
     )
 }
 
-
-// Генерирует сообщение из диапазона ячеек Excel и обрабатывает данные для замены символов.
+// generateMessageFromRange: Генерирует текст сообщения из указанного диапазона ячеек Excel.
 fun generateMessageFromRange(filePath: String, sheetName: String, range: String, wordUz: String, wordRus: String): String {
-    println("30. Генерация сообщения из диапазона: $range")
     val file = File(filePath)
     val workbook = WorkbookFactory.create(file)
-    val sheet = workbook.getSheet(sheetName) ?: throw IllegalArgumentException("Лист $sheetName не найден")
+    val sheet = workbook.getSheet(sheetName)
+        ?: throw IllegalArgumentException("Лист $sheetName не найден")
     val cells = extractCellsFromRange(sheet, range)
-    println("31. Найдено ${cells.size} ячеек в диапазоне $range")
 
-    // Обработка первой ячейки (справочная информация)
     val firstCell = cells.firstOrNull()?.toString()?.replace("\n\n", "\n")?.trim()?.escapeMarkdownV2() ?: ""
     val blurredFirstCell = if (firstCell.isNotBlank()) "||$firstCell||" else ""
-    println("31.1 Скрытый текст первой ячейки: $blurredFirstCell")
 
-    // Обработка остальных ячеек
-    val specificRowsForE = setOf(8, 9, 12, 13, 18, 19, 20, 25, 26, 27, 31, 32, 36, 38, 40) // Индексы строк для ячеек E9, E10 и т.д.
+    val specificRowsForE = setOf(8, 9, 12, 13, 18, 19, 20, 25, 26, 27, 31, 32, 36, 38, 40)
     val messageBody = cells.drop(1).joinToString("\n") { cell ->
         val content = cell.toString().replace("*", wordUz)
-        println("34.0 Исходное содержимое ячейки: $content")
-
-        val adjustedContent = if (
-            cell.columnIndex == 2 || // Для столбца C
-            (cell.columnIndex == 4 && specificRowsForE.contains(cell.rowIndex)) // Для конкретных ячеек столбца E
-        ) {
+        if (cell.columnIndex == 2 || (cell.columnIndex == 4 && specificRowsForE.contains(cell.rowIndex))) {
             adjustWordUz(content, wordUz)
         } else {
             content
-        }
-
-        println("34.2 Результат после обработки: $adjustedContent")
-        adjustedContent.replace("`", "\\`") // Экранирование обратного апострофа
+        }.replace("`", "\\`")
     }
-    println("32. Текст сообщения без первой ячейки:\n$messageBody")
 
     workbook.close()
-    println("33. Файл закрыт")
-
-    // Формируем итоговое сообщение
-    val finalMessage = listOf(blurredFirstCell, messageBody).filter { it.isNotBlank() }.joinToString("\n\n")
-    println("33.1 Итоговое сообщение:\n$finalMessage")
-    return finalMessage
+    return listOf(blurredFirstCell, messageBody).filter { it.isNotBlank() }.joinToString("\n\n")
 }
 
-// Экранирует символы для корректной работы формата MarkdownV2.
+// escapeMarkdownV2: Экранирует спецсимволы для Markdown.
 fun String.escapeMarkdownV2(): String {
     return this.replace("\\", "\\\\")
         .replace("_", "\\_")
@@ -430,98 +425,181 @@ fun String.escapeMarkdownV2(): String {
         .replace("!", "\\!")
 }
 
-// Изменяет слово на основе контекста, заменяя "+" на буквы (s/i) для согласных и гласных.
+// adjustWordUz: Модифицирует узбекское слово в зависимости от контекста.
 fun adjustWordUz(content: String, wordUz: String): String {
     val vowels = "aeiouаоиеёу"
     val lastChar = wordUz.lastOrNull()?.lowercaseChar()
     val nextChar = content.substringAfter("+", "").firstOrNull()?.lowercaseChar()
 
-    println("34. Обработка окончания слова: lastChar = $lastChar, nextChar = $nextChar")
-
-    // Если + отсутствует, возвращаем без изменений
     if (!content.contains("+")) {
-        println("34.1 В строке отсутствует '+'. Возвращаем без изменений.")
         return content
     }
 
-    // Определяем букву для замены "+"
     val replacement = when {
         lastChar != null && nextChar != null &&
-                lastChar in vowels && nextChar in vowels -> "s" // Обе гласные
+                lastChar in vowels && nextChar in vowels -> "s"
         lastChar != null && nextChar != null &&
-                lastChar !in vowels && nextChar !in vowels -> "i" // Обе согласные
-        else -> "" // Если не удаётся определить, оставляем без изменений
+                lastChar !in vowels && nextChar !in vowels -> "i"
+        else -> ""
     }
 
-    // Заменяем "+" на определённую букву
-    val replacedContent = content.replace("+", replacement)
-    println("35. Заменённое содержимое с '+': $replacedContent")
-
-    // Проверяем, есть ли символ "*"
-    val result = if (replacedContent.contains("*")) {
-        replacedContent.replace("*", wordUz)
-    } else {
-        replacedContent
-    }
-
-    println("35.1 Изменённый текст после замены '*': $result")
-    return result
+    return content.replace("+", replacement).replace("*", wordUz)
 }
 
-// Извлекает ячейки из указанного диапазона Excel для дальнейшей обработки.
+// extractCellsFromRange: Извлекает ячейки из указанного диапазона листа Excel.
 fun extractCellsFromRange(sheet: Sheet, range: String): List<Cell> {
-    println("36. Извлечение ячеек из диапазона: $range")
-
-    // Разделение диапазона на начало и конец
-    println("36.1 Разделение диапазона: $range")
-    val (start, end) = range.split("-").map {
-        println("36.2 Обработка части диапазона: $it")
-        it.replace(Regex("[A-Z]"), "").toInt() - 1.also { num ->
-            println("36.3 Преобразование в номер строки: $num")
-        }
-    }
-    println("36.4 Диапазон строк: от $start до $end")
-
-    // Определение индекса столбца
-    println("36.5 Определение столбца для диапазона: $range")
+    val (start, end) = range.split("-").map { it.replace(Regex("[A-Z]"), "").toInt() - 1 }
     val column = range[0] - 'A'
-    println("36.6 Индекс столбца: $column")
 
-    // Извлечение ячеек из указанного диапазона
-    println("36.7 Извлечение ячеек из строк: $start-$end")
-    val cells = (start..end).mapNotNull { rowIndex ->
-        println("36.8 Обработка строки: $rowIndex")
+    return (start..end).mapNotNull { rowIndex ->
         val row = sheet.getRow(rowIndex)
-        if (row == null) {
-            println("36.9 Строка $rowIndex отсутствует")
-            null
-        } else {
-            val cell = row.getCell(column)
-            if (cell == null) {
-                println("36.10 Ячейка в строке $rowIndex и столбце $column отсутствует")
-                null
-            } else {
-                println("36.11 Найдена ячейка: строка $rowIndex, столбец $column, значение: ${cell.toString()}")
-                cell
+        row?.getCell(column)
+    }
+}
+
+fun checkUserState(userId: Long, filePath: String, sheetName: String = "Состояние пользователя"): Boolean {
+    println("🔍 Проверяем состояние пользователя. ID: $userId, Файл: $filePath, Лист: $sheetName")
+
+    val file = File(filePath)
+    var userRow: Row? = null
+    var allCompleted = false
+
+    WorkbookFactory.create(file).use { workbook ->
+        val sheet = workbook.getSheet(sheetName) ?: throw IllegalArgumentException("Лист $sheetName не найден")
+        println("✅ Лист найден: $sheetName")
+
+        // Ищем ID пользователя или первую пустую строку
+        println("🔍 Начинаем поиск пользователя по ID или пустой строки")
+        for (rowIndex in 1..sheet.lastRowNum.coerceAtLeast(1)) { // Пропускаем первую строку (заголовки)
+            val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex) // Создаём строку, если её нет
+            val idCell = row.getCell(0) ?: row.createCell(0) // Создаём ячейку ID, если её нет
+
+            // Чтение значения ID
+            val currentId = when (idCell.cellType) {
+                CellType.NUMERIC -> idCell.numericCellValue.toLong() // Приводим Double к Long
+                CellType.STRING -> idCell.stringCellValue.toLongOrNull() // Пробуем привести строку к Long
+                else -> null
+            }
+            println("🔎 Проверяем строку: ${rowIndex + 1}, ID: $currentId")
+
+            // Если ID совпадает, проверяем остальные ячейки
+            if (currentId == userId) {
+                println("✅ Пользователь найден в строке: ${rowIndex + 1}")
+                userRow = row
+                break
+            }
+
+            // Если ID отсутствует, записываем нового пользователя
+            if (currentId == null || currentId == 0L) {
+                println("⚠️ Пустая ячейка. Записываем нового пользователя.")
+                idCell.setCellValue(userId.toDouble()) // Явно записываем как Double
+                for (i in 1..6) {
+                    row.createCell(i).setCellValue(0.0) // Устанавливаем значения по умолчанию
+                }
+                safelySaveWorkbook(workbook, filePath) // Сохраняем изменения
+                println("✅ Пользователь добавлен в строку: ${rowIndex + 1}")
+                return false // Новому пользователю доступ к "Следующему шагу" не предоставляется
             }
         }
+
+        // Если ID найден, проверяем остальные ячейки
+        if (userRow != null) {
+            println("🔍 Проверяем значения в колонках Им., Род., Вин., Дат., Мест., Исх.")
+            allCompleted = (1..6).all { index ->
+                val cell = userRow!!.getCell(index)
+                val value = cell?.toString()?.toDoubleOrNull() ?: 0.0
+                println("🔎 Колонка ${index + 1}: значение = $value")
+                value > 0
+            }
+        } else {
+            // Если мы прошли весь список и не нашли ID, добавляем его в новую строку
+            val newRowIndex = sheet.physicalNumberOfRows
+            val newRow = sheet.createRow(newRowIndex)
+            newRow.createCell(0).setCellValue(userId.toDouble()) // ID в первом столбце
+            for (i in 1..6) {
+                newRow.createCell(i).setCellValue(0.0) // Значения по умолчанию
+            }
+            safelySaveWorkbook(workbook, filePath) // Сохраняем изменения
+            println("✅ Пользователь добавлен в строку: ${newRowIndex + 1}")
+            return false // Новому пользователю доступ к "Следующему шагу" не предоставляется
+        }
     }
 
-    // Итоговый результат
-    println("37. Извлечено ${cells.size} ячеек из диапазона $range")
-    return cells
+    println("✅ Проверка завершена. Все шаги завершены: $allCompleted")
+    return allCompleted
 }
 
-// Отправляет финальное сообщение пользователю с возможностью выбора следующего действия.
-fun sendFinalMessage(chatId: Long, bot: Bot) {
-    println("38. Отправка финального сообщения для пользователя $chatId")
-    bot.sendMessage(
-        chatId = ChatId.fromId(chatId),
-        text = "Поздравляем! Вы прошли все этапы.",
-        replyMarkup = InlineKeyboardMarkup.createSingleRowKeyboard(
-            InlineKeyboardButton.CallbackData("Повторить", "repeat"),
-            InlineKeyboardButton.CallbackData("Пройти тест", "test")
-        )
-    )
-    println("39. Финальное сообщение отправлено пользователю $chatId")
+
+
+fun safelySaveWorkbook(workbook: org.apache.poi.ss.usermodel.Workbook, filePath: String) {
+    val tempFile = File("${filePath}.tmp")
+    try {
+        FileOutputStream(tempFile).use { outputStream ->
+            workbook.write(outputStream)
+        }
+        val originalFile = File(filePath)
+        if (originalFile.exists()) {
+            if (!originalFile.delete()) {
+                throw IllegalStateException("Не удалось удалить старый файл: $filePath")
+            }
+        }
+        if (!tempFile.renameTo(originalFile)) {
+            throw IllegalStateException("Не удалось переименовать временный файл: ${tempFile.path}")
+        }
+        println("✅ Файл успешно сохранён: $filePath")
+    } catch (e: Exception) {
+        println("❌ Ошибка при сохранении файла: ${e.message}")
+        tempFile.delete() // Удаляем временный файл в случае ошибки
+        throw e
+    }
+}
+
+fun addScoreForCase(userId: Long, case: String, filePath: String, sheetName: String = "Состояние пользователя") {
+    println("🔍 Начинаем добавление балла. Пользователь: $userId, Падеж: $case")
+
+    val file = File(filePath)
+    if (!file.exists()) {
+        println("❌ Файл $filePath не найден.")
+        throw IllegalArgumentException("Файл $filePath не найден.")
+    }
+
+    WorkbookFactory.create(file).use { workbook ->
+        val sheet = workbook.getSheet(sheetName) ?: throw IllegalArgumentException("❌ Лист $sheetName не найден")
+        println("✅ Лист найден: $sheetName")
+
+        // Определяем индекс столбца для падежа
+        val caseColumnIndex = when (case) {
+            "Именительный" -> 1
+            "Родительный" -> 2
+            "Винительный" -> 3
+            "Дательный" -> 4
+            "Местный" -> 5
+            "Исходный" -> 6
+            else -> throw IllegalArgumentException("❌ Неизвестный падеж: $case")
+        }
+
+        println("🔎 Ищем пользователя $userId в таблице...")
+        for (rowIndex in 1..sheet.lastRowNum) { // Пропускаем заголовок
+            val row = sheet.getRow(rowIndex) ?: continue
+            val idCell = row.getCell(0)
+            val currentId = when (idCell?.cellType) {
+                CellType.NUMERIC -> idCell.numericCellValue.toLong() // Приводим Double к Long
+                CellType.STRING -> idCell.stringCellValue.toDoubleOrNull()?.toLong() // Сначала в Double, затем в Long
+                else -> null
+            }
+
+            if (currentId == userId) {
+                println("✅ Пользователь найден в строке ${rowIndex + 1}")
+                val caseCell = row.getCell(caseColumnIndex) ?: row.createCell(caseColumnIndex)
+                val currentScore = caseCell.numericCellValue.takeIf { it > 0 } ?: 0.0
+                println("🔎 Текущее значение: $currentScore")
+                caseCell.setCellValue(currentScore + 1)
+                println("✅ Новое значение: ${currentScore + 1}")
+                safelySaveWorkbook(workbook, filePath)
+                println("✅ Балл добавлен и изменения сохранены.")
+                return
+            }
+        }
+        println("⚠️ Пользователь $userId не найден. Этого не должно происходить на этом этапе.")
+    }
 }
