@@ -3,6 +3,7 @@ import org.gradle.kotlin.dsl.invoke
 plugins {
     kotlin("jvm") version "2.0.20"
     kotlin("plugin.serialization") version "2.0.20"
+    id("com.github.johnrengelman.shadow") version "7.1.2"
 }
 
 group = "org.example"
@@ -40,10 +41,25 @@ dependencies {
     testImplementation(kotlin("test"))
 }
 
-tasks.test {
-    useJUnitPlatform()
+tasks {
+    test {
+        useJUnitPlatform()
+    }
+    shadowJar {
+        archiveBaseName.set("telegram-bot")
+        archiveVersion.set("1.0")
+        archiveClassifier.set("") // Убирает "-all" из имени файла
+    }
 }
 
 kotlin {
     jvmToolchain(17)
+}
+
+tasks.jar {
+    manifest {
+        attributes(
+            "Main-Class" to "org.example.MainKt" // Укажи главный класс с функцией main
+        )
+    }
 }
