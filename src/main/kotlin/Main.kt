@@ -42,6 +42,8 @@ val userStates = mutableMapOf<Long, Int>()
 val userCases = mutableMapOf<Long, String>() // Хранение выбранного падежа для каждого пользователя
 val userWords = mutableMapOf<Long, Pair<String, String>>() // Хранение выбранного слова для каждого пользователя
 val userBlocks = mutableMapOf<Long, Int>() // Хранение текущего блока для каждого пользователя
+val userBlockCompleted = mutableMapOf<Long, Triple<Boolean, Boolean, Boolean>>() // Состояния блоков
+
 
 val tableFile = "Алгоритм 3.6.xlsx"
 
@@ -53,11 +55,14 @@ fun main() {
         dispatch {
             command("start") {
                 val userId = message.chat.id
-                println("1. 🔍 Команда /start от пользователя: $userId")
+                println("3. 🔍 Команда /start от пользователя: $userId")
+
                 userStates[userId] = 0
                 userWords.remove(userId) // Удаляем старые данные о слове
+
+                initializeUserBlockStates(userId, tableFile) // Инициализация состояний блоков
                 sendWelcomeMessage(userId, bot)
-                sendCaseSelection(userId, bot, tableFile) // Добавляем tableFile как filePath
+                sendCaseSelection(userId, bot, tableFile)
             }
 
             callbackQuery {
@@ -144,15 +149,27 @@ fun main() {
                     }
                     data == "next_block" -> {
                         val currentBlock = userBlocks[chatId] ?: 1
-                        if (currentBlock < 3) {
-                            userBlocks[chatId] = currentBlock + 1
-                            println("14. 🔍 Переход на следующий блок для пользователя $chatId. Новый блок: ${currentBlock + 1}")
-                            sendCaseSelection(chatId, bot, tableFile)
+                        val blockStates = userBlockCompleted[chatId] ?: Triple(false, false, false)
+
+                        if (currentBlock == 1 && blockStates.first ||
+                            currentBlock == 2 && blockStates.second ||
+                            currentBlock == 3) {
+                            if (currentBlock < 3) {
+                                userBlocks[chatId] = currentBlock + 1
+                                println("5. ✅ Переход на следующий блок для пользователя $chatId. Новый блок: ${currentBlock + 1}")
+                                initializeUserBlockStates(chatId, tableFile) // Обновляем состояния
+                                sendCaseSelection(chatId, bot, tableFile)
+                            } else {
+                                bot.sendMessage(
+                                    chatId = ChatId.fromId(chatId),
+                                    text = "Вы уже на последнем блоке."
+                                )
+                            }
                         } else {
-                            val totalScore = calculateTotalScore(chatId, tableFile)
+                            println("6. ⚠️ Блок $currentBlock не завершен. Сообщаем пользователю.")
                             bot.sendMessage(
                                 chatId = ChatId.fromId(chatId),
-                                text = "Вы прошли все блоки. Сейчас у вас $totalScore баллов. Для прохождения теста наберите 50 баллов."
+                                text = "Пройдите все падежи текущего блока, чтобы открыть следующий."
                             )
                         }
                     }
@@ -161,12 +178,9 @@ fun main() {
                         val currentBlock = userBlocks[chatId] ?: 1
                         if (currentBlock > 1) {
                             userBlocks[chatId] = currentBlock - 1
-                            println("15. 🔍 Возврат на предыдущий блок для пользователя $chatId. Новый блок: ${currentBlock - 1}")
+                            println("7. 🔍 Возврат на предыдущий блок для пользователя $chatId. Новый блок: ${currentBlock - 1}")
                             sendCaseSelection(chatId, bot, tableFile)
                         }
-                    }
-                    else -> {
-                        println("16. ⚠️ Неизвестный callbackQuery: $data")
                     }
                 }
             }
@@ -178,10 +192,7 @@ fun main() {
 // sendCaseSelection: Отправляет пользователю клавиатуру для выбора падежа.
 fun sendCaseSelection(chatId: Long, bot: Bot, filePath: String) {
     val currentBlock = userBlocks[chatId] ?: 1
-    println("17. 🔍 Пользователь $chatId выбирает падеж. Текущий блок: $currentBlock")
-
-    val showNextStep = checkUserState(chatId, filePath, block = currentBlock)
-    println("18. 🔎 Доступен ли следующий шаг? $showNextStep")
+    println("8. 🔍 Отправляем выбор падежа для блока $currentBlock")
 
     val buttons = mutableListOf(
         listOf(InlineKeyboardButton.CallbackData("Именительный падеж", "case:Именительный")),
@@ -193,15 +204,12 @@ fun sendCaseSelection(chatId: Long, bot: Bot, filePath: String) {
     )
 
     if (currentBlock > 1) {
-        println("19. 🔙 Добавляем кнопку 'Предыдущий блок'.")
         buttons.add(listOf(InlineKeyboardButton.CallbackData("Предыдущий блок", "prev_block")))
     }
-    if (showNextStep) {
-        println("20. 🔜 Добавляем кнопку 'Следующий блок'.")
-        buttons.add(listOf(InlineKeyboardButton.CallbackData("Следующий блок", "next_block")))
-    }
 
-    println("21. 📨 Отправляем сообщение с выбором падежа.")
+    buttons.add(listOf(InlineKeyboardButton.CallbackData("Следующий блок", "next_block")))
+
+    println("9. 📨 Отправляем клавиатуру выбора падежа.")
     bot.sendMessage(
         chatId = ChatId.fromId(chatId),
         text = "Выберите падеж для изучения блока $currentBlock:",
@@ -368,7 +376,14 @@ fun sendStateMessage(chatId: Long, bot: Bot, filePath: String, wordUz: String, w
 
     val range = rangesForCase[currentState]
     println("55. 🔍 Генерация сообщения для диапазона: $range")
-    val listName: String = "Существительные 2"
+    val currentBlock = userBlocks[chatId] ?: 1 // Получаем текущий блок пользователя (по умолчанию 1)
+    val listName = when (currentBlock) {
+        1 -> "Существительные 1"
+        2 -> "Существительные 2"
+        3 -> "Существительные 3"
+        else -> "Существительные 1" // Значение по умолчанию, если блок не указан
+    }
+
     val messageText = try {
         generateMessageFromRange(filePath, listName, range, wordUz, wordRus)
     } catch (e: Exception) {
@@ -918,6 +933,19 @@ fun XSSFColor.getRgbWithTint(): ByteArray? {
             baseRgb
         }
     }
+}
+
+// Добавляем инициализацию состояний блоков
+fun initializeUserBlockStates(chatId: Long, filePath: String) {
+    println("1. 🔍 Инициализация состояний блоков для пользователя $chatId")
+
+    val block1Completed = checkUserState(chatId, filePath, block = 1)
+    val block2Completed = checkUserState(chatId, filePath, block = 2)
+    val block3Completed = checkUserState(chatId, filePath, block = 3)
+
+    userBlockCompleted[chatId] = Triple(block1Completed, block2Completed, block3Completed)
+
+    println("2. ✅ Состояния блоков для пользователя $chatId: $userBlockCompleted")
 }
 
 
