@@ -24,13 +24,14 @@ import org.apache.poi.ss.usermodel.IndexedColors
 import org.apache.poi.ss.usermodel.Row
 import org.apache.poi.xssf.usermodel.XSSFColor
 import org.apache.poi.xssf.usermodel.XSSFFont
+import org.apache.poi.xssf.usermodel.XSSFRichTextString
 import java.io.FileOutputStream
 import kotlin.experimental.and
 
 
 val caseRanges = mapOf(
-    "Именительный" to listOf("A1-A4", "B1-B7", "C1-C7", "D1-D7", "E1-E7"),
-    "Родительный" to listOf("A8-A9", "B8-B14", "C8-C14", "D8-D14", "E8-E14"),
+    "Именительный" to listOf("A1-A7", "B1-B7", "C1-C7", "D1-D7", "E1-E7"),
+    "Родительный" to listOf("A8-A14", "B8-B14", "C8-C14", "D8-D14", "E8-E14"),
     "Винительный" to listOf("A15-A21", "B15-B21", "C15-C21", "D15-D21", "E15-E21"),
     "Дательный" to listOf("A22-A28", "B22-B28", "C22-C28", "D22-D28", "E22-E28"),
     "Местный" to listOf("A29-A35", "B29-B35", "C29-C35", "D29-D35", "E29-E35"),
@@ -856,62 +857,55 @@ fun processCellContent(cell: Cell?, wordUz: String): String {
         return ""
     }
 
-    val content = cell.toString().trim()
-    println("208. 📜 Содержимое ячейки: \"$content\".")
+    val richText = cell.richStringCellValue as XSSFRichTextString
+    val text = richText.string
+    println("208. 📜 Содержимое ячейки: \"$text\".")
 
-    // Проверяем цвет текста
-    val isRed = cell.cellStyle?.let { style ->
-        val fontIndex = style.fontIndexAsInt
-        println("209. 🎨 Индекс шрифта: $fontIndex")
+    val runs = richText.numFormattingRuns()
+    println("209. 📊 Количество форматированных участков: $runs")
 
-        val font = cell.sheet.workbook.getFontAt(fontIndex)
-        println("209.1. 🎨 Тип шрифта: ${font::class.simpleName}")
-
-        when (font) {
-            is XSSFFont -> {
-                val xssfColor = font.xssfColor
-                val hexColor = xssfColor?.argbHex // HEX-значение цвета
-                val themeColor = xssfColor?.theme // Цвет темы, если используется
-                println("209.2. 🟥 XSSF HEX-цвет: $hexColor, Цвет темы: $themeColor")
-
-                if (hexColor != null) {
-                    hexColor.startsWith("FFFF00") // Красный текст (ARGB: FFFF0000)
-                } else {
-                    // Если цвет берётся из темы, пытаемся получить RGB
-                    val themeBasedColor = xssfColor?.getRgbWithTint()
-                    println("209.3. 🎨 Цвет из темы: ${themeBasedColor?.joinToString { "%02X".format(it) }}")
-                    themeBasedColor?.contentEquals(byteArrayOf(255.toByte(), 0, 0)) == true // RGB: (255, 0, 0)
-                }
-            }
-
-            is HSSFFont -> {
-                val indexedColor = font.color
-                println("209.4. 🟥 HSSF IndexedColor: $indexedColor")
-                indexedColor == IndexedColors.RED.index // Проверяем индекс цвета для HSSF
-            }
-
-            else -> {
-                println("209.5. ⚠️ Неподдерживаемый тип шрифта.")
-                false
-            }
-        }
-    } ?: false
-    println("210. 🎨 Текст красный? $isRed")
-
-    // Обрабатываем текст (замена * и +)
-    val processedContent = adjustWordUz(content, wordUz)
-    println("211. 🔧 Обработанный текст после adjustWordUz: \"$processedContent\".")
-
-    // Если текст был красным, добавляем блюр
-    val result = if (isRed) {
-        println("212. 🔴 Текст был красным. Добавляем блюр.")
-        "||${processedContent.escapeMarkdownV2()}||"
-    } else {
-        processedContent.escapeMarkdownV2()
+    // Если форматированных участков нет, обрабатываем текст целиком
+    if (runs == 0) {
+        println("⚠️ У ячейки нет форматированных участков. Используем весь текст.")
+        val processedContent = adjustWordUz(text, wordUz).escapeMarkdownV2()
+        println("✅ Результат для текста без форматирования: \"$processedContent\"")
+        return processedContent
     }
 
-    println("213. ✅ Результат обработки: \"$result\".")
-    return result
+    // Если форматированные участки есть, обрабатываем их по частям
+    val processedText = buildString {
+        for (i in 0 until runs) {
+            val start = richText.getIndexOfFormattingRun(i)
+            val end = if (i + 1 < runs) richText.getIndexOfFormattingRun(i + 1) else text.length
+            val substring = text.substring(start, end)
+
+            val font = richText.getFontOfFormattingRun(i) as XSSFFont?
+            val colorHex = font?.let { getFontColor(it) } ?: "Цвет не определён"
+            println("    🎨 Цвет участка $i: $colorHex")
+
+            val adjustedSubstring = adjustWordUz(substring, wordUz)
+
+            if (colorHex == "#FF0000") {
+                println("    🔴 Текст участка \"$substring\" красный. Добавляем блюр.")
+                append("||${adjustedSubstring.escapeMarkdownV2()}||")
+            } else {
+                append(adjustedSubstring.escapeMarkdownV2())
+            }
+        }
+    }
+
+    println("213. ✅ Результат обработки: \"$processedText\".")
+    return processedText
+}
+
+
+
+// Функция для извлечения цвета шрифта
+fun getFontColor(font: XSSFFont): String {
+    val color = font.xssfColor
+    val colorHex = color?.rgb?.joinToString(prefix = "#", separator = "") { "%02X".format(it) } ?: "Цвет не определён"
+    println("        🔍 Цвет шрифта: $colorHex")
+    return colorHex
 }
 
 // Вспомогательный метод для обработки цветов с учётом оттенков
