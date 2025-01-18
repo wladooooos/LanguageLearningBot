@@ -59,7 +59,7 @@ kotlin {
 tasks.jar {
     manifest {
         attributes(
-            "Main-Class" to "org.example.MainKt" // Укажи главный класс с функцией main
+            "Main-Class" to "com.github.kotlintelegrambot.dispatcher.MainKt" // Укажи главный класс с функцией main
         )
     }
 }
