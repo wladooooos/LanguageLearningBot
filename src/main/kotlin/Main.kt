@@ -45,7 +45,7 @@ val userBlocks = mutableMapOf<Long, Int>() // Хранение текущего 
 val userBlockCompleted = mutableMapOf<Long, Triple<Boolean, Boolean, Boolean>>() // Состояния блоков
 
 
-val tableFile = "Алгоритм 3.6.xlsx"
+val tableFile = "Table.xlsx"
 
 fun main() {
 
@@ -58,6 +58,7 @@ fun main() {
                 println("3. 🔍 Команда /start от пользователя: $userId")
 
                 userStates[userId] = 0
+                userBlocks[userId] = 1
                 userWords.remove(userId) // Удаляем старые данные о слове
 
                 initializeUserBlockStates(userId, tableFile) // Инициализация состояний блоков
@@ -191,30 +192,91 @@ fun main() {
 }
 // sendCaseSelection: Отправляет пользователю клавиатуру для выбора падежа.
 fun sendCaseSelection(chatId: Long, bot: Bot, filePath: String) {
-    val currentBlock = userBlocks[chatId] ?: 1
-    println("8. 🔍 Отправляем выбор падежа для блока $currentBlock")
+    val currentBlock = userBlocks[chatId] ?: 1 // Получаем текущий блок пользователя
+    println("🔍 Формируем клавиатуру выбора падежа для блока $currentBlock")
 
-    val buttons = mutableListOf(
-        listOf(InlineKeyboardButton.CallbackData("Именительный падеж", "case:Именительный")),
-        listOf(InlineKeyboardButton.CallbackData("Родительный падеж", "case:Родительный")),
-        listOf(InlineKeyboardButton.CallbackData("Винительный падеж", "case:Винительный")),
-        listOf(InlineKeyboardButton.CallbackData("Дательный падеж", "case:Дательный")),
-        listOf(InlineKeyboardButton.CallbackData("Местный падеж", "case:Местный")),
-        listOf(InlineKeyboardButton.CallbackData("Исходный падеж", "case:Исходный"))
+    // Определяем падежи и соответствующие колонки для текущего блока
+    val columnRanges = mapOf(
+        1 to mapOf("Именительный" to 1, "Родительный" to 2, "Винительный" to 3, "Дательный" to 4, "Местный" to 5, "Исходный" to 6),
+        2 to mapOf("Именительный" to 7, "Родительный" to 8, "Винительный" to 9, "Дательный" to 10, "Местный" to 11, "Исходный" to 12),
+        3 to mapOf("Именительный" to 13, "Родительный" to 14, "Винительный" to 15, "Дательный" to 16, "Местный" to 17, "Исходный" to 18)
     )
 
-    if (currentBlock > 1) {
-        buttons.add(listOf(InlineKeyboardButton.CallbackData("Предыдущий блок", "prev_block")))
+    val caseColumns = columnRanges[currentBlock]
+    if (caseColumns == null) {
+        println("⚠️ Ошибка: блок $currentBlock не найден.")
+        bot.sendMessage(chatId = ChatId.fromId(chatId), text = "Ошибка: невозможно загрузить данные блока.")
+        return
     }
 
-    buttons.add(listOf(InlineKeyboardButton.CallbackData("Следующий блок", "next_block")))
+    // Читаем баллы пользователя для текущего блока
+    val userScores = readUserScores(chatId, filePath, caseColumns)
+    println("📊 Баллы пользователя для блока $currentBlock: $userScores")
 
-    println("9. 📨 Отправляем клавиатуру выбора падежа.")
+    // Формируем кнопки с падежами и баллами
+    val buttons = caseColumns.keys.map { caseName ->
+        val score = userScores[caseName] ?: 0 // Если баллов нет, используем 0
+        InlineKeyboardButton.CallbackData("$caseName [$score]", "case:$caseName")
+    }.map { listOf(it) }.toMutableList()
+
+    // Добавляем кнопки для переключения блоков
+    if (currentBlock > 1) {
+        buttons.add(listOf(InlineKeyboardButton.CallbackData("⬅️ Предыдущий блок", "prev_block")))
+    }
+    if (currentBlock < 3) {
+        buttons.add(listOf(InlineKeyboardButton.CallbackData("➡️ Следующий блок", "next_block")))
+    }
+
+    // Отправляем сообщение с обновлённой клавиатурой
+    println("📤 Отправляем клавиатуру выбора падежа с баллами для пользователя $chatId")
     bot.sendMessage(
         chatId = ChatId.fromId(chatId),
         text = "Выберите падеж для изучения блока $currentBlock:",
         replyMarkup = InlineKeyboardMarkup.create(buttons)
     )
+}
+
+// Функция для чтения баллов пользователя из таблицы
+fun readUserScores(chatId: Long, filePath: String, caseColumns: Map<String, Int>): Map<String, Int> {
+    println("🔍 Считываем баллы пользователя $chatId из файла $filePath")
+    val file = File(filePath)
+    if (!file.exists()) {
+        println("❌ Файл $filePath не найден.")
+        return emptyMap()
+    }
+
+    val scores = mutableMapOf<String, Int>()
+
+    WorkbookFactory.create(file).use { workbook ->
+        val sheet = workbook.getSheet("Состояние пользователя")
+        if (sheet == null) {
+            println("❌ Лист 'Состояние пользователя' не найден.")
+            return emptyMap()
+        }
+
+        // Ищем строку пользователя
+        for (row in sheet) {
+            val idCell = row.getCell(0)
+            val userId = when (idCell?.cellType) {
+                CellType.NUMERIC -> idCell.numericCellValue.toLong()
+                CellType.STRING -> idCell.stringCellValue.toLongOrNull()
+                else -> null
+            }
+
+            if (userId == chatId) {
+                println("✅ Найдена строка пользователя $chatId. Извлекаем баллы...")
+                for ((caseName, colIndex) in caseColumns) {
+                    val cell = row.getCell(colIndex)
+                    val score = cell?.numericCellValue?.toInt() ?: 0
+                    scores[caseName] = score
+                }
+                break
+            }
+        }
+    }
+
+    println("✅ Считанные баллы для пользователя $chatId: $scores")
+    return scores
 }
 
 // sendWelcomeMessage: Отправляет приветственное сообщение с кнопкой /start.
@@ -432,12 +494,14 @@ fun sendFinalButtons(chatId: Long, bot: Bot, wordUz: String, wordRus: String, fi
         listOf(InlineKeyboardButton.CallbackData("Повторить", "repeat:$wordUz:$wordRus")),
         listOf(InlineKeyboardButton.CallbackData("Изменить слово", "change_word")),
         listOf(InlineKeyboardButton.CallbackData("Изменить падеж", "change_case")),
-        listOf(InlineKeyboardButton.CallbackData("Изменить падеж и слово", "reset"))
+        //listOf(InlineKeyboardButton.CallbackData("Изменить падеж и слово", "reset"))
     )
-
-    if (showNextStep) {
-        println("94. ✅ Добавляем кнопку 'Следующий блок'")
-        buttons.add(listOf(InlineKeyboardButton.CallbackData("Следующий блок", "next_block")))
+    val currentBlock = userBlocks[chatId] ?: 1
+    if (currentBlock > 1) {
+        buttons.add(listOf(InlineKeyboardButton.CallbackData("⬅️ Предыдущий блок", "prev_block")))
+    }
+    if (currentBlock < 3) {
+        buttons.add(listOf(InlineKeyboardButton.CallbackData("➡️ Следующий блок", "next_block")))
     }
 
     println("95. 📨 Отправляем сообщение с финальным меню.")
@@ -467,7 +531,7 @@ fun generateMessageFromRange(filePath: String, sheetName: String, range: String,
     val cells = extractCellsFromRange(sheet, range, wordUz)
     println("100. 📜 Извлечённые ячейки: $cells")
 
-    val firstCell = cells.firstOrNull()?.escapeMarkdownV2() ?: ""
+    val firstCell = cells.firstOrNull() ?: ""
     val blurredFirstCell = if (firstCell.isNotBlank()) "||$firstCell||" else ""
     println("101. 🔑 Первый элемент: \"$firstCell\", Заблюренный: \"$blurredFirstCell\"")
 
@@ -506,20 +570,51 @@ fun String.escapeMarkdownV2(): String {
 fun adjustWordUz(content: String, wordUz: String): String {
     println("105. 🔍 Обработка слова \"$wordUz\" в контексте \"$content\"")
 
-    if (content.contains("+")) {
-        val replacement = "s" // Пример для логики `+`. Можешь оставить как раньше.
-        println("106. 🔧 Найден '+'. Заменяем его на \"$replacement\".")
-        return content.replace("+", replacement).replace("*", wordUz)
-    }
+    // Вспомогательная функция для проверки, является ли символ гласным
+    fun Char.isVowel() = this.lowercaseChar() in "aeiouаеёиоуыэюя"
 
-    if (content.contains("*")) {
-        println("107. 🔧 Найден '*'. Заменяем его на \"$wordUz\".")
-        return content.replace("*", wordUz)
-    }
+    // Строим результат через StringBuilder
+    return buildString {
+        var i = 0
+        while (i < content.length) {
+            val char = content[i]
 
-    println("108. 🔎 Символов для замены не найдено.")
-    return content
+            when {
+                // Если встречается '+', применяем правила замены
+                char == '+' && i + 1 < content.length -> {
+                    val nextChar = content[i + 1]
+                    val lastChar = wordUz.lastOrNull()
+
+                    val replacement = when {
+                        lastChar != null && lastChar.isVowel() && nextChar.isVowel() -> "s"
+                        lastChar != null && !lastChar.isVowel() && !nextChar.isVowel() -> "i"
+                        else -> ""
+                    }
+
+                    append(replacement)
+                    append(nextChar) // Добавляем символ после `+` (например, `m`).
+                    i++ // Пропускаем символ `nextChar` для корректной обработки.
+                }
+
+                // Если встречается '*', заменяем на wordUz
+                char == '*' -> {
+                    append(wordUz)
+                }
+
+                // В остальных случаях просто добавляем символ
+                else -> {
+                    append(char)
+                }
+            }
+
+            i++
+        }
+    }
 }
+
+
+
+
 
 // extractCellsFromRange: Извлекает и обрабатывает ячейки из указанного диапазона листа Excel.
 fun extractCellsFromRange(sheet: Sheet, range: String, wordUz: String): List<String> {
@@ -607,7 +702,9 @@ fun checkUserState(userId: Long, filePath: String, sheetName: String = "Сост
             return false
         }
     }
-
+    println("$userBlockCompleted---------------------------------------------------------------------------------------------------------------------------")
+    initializeUserBlockStates(userId, tableFile) // Обновляем состояния
+    println("$userBlockCompleted---------------------------------------------------------------------------------------------------------------------------")
     println("124. ✅ Проверка завершена. Все шаги завершены: $allCompleted")
     return allCompleted
 }
@@ -762,7 +859,7 @@ fun checkUserState(userId: Long, filePath: String, sheetName: String = "Сост
 
 
 fun addScoreForCase(userId: Long, case: String, filePath: String, block: Int) {
-    println("186. 🔍 Начинаем добавление балла для пользователя $userId. Падеж: $case, Файл: $filePath, Блок: $block.")
+    println("🔍 Начинаем добавление балла для пользователя $userId. Падеж: $case, Файл: $filePath, Блок: $block.")
 
     val columnRanges = mapOf(
         1 to mapOf("Именительный" to 1, "Родительный" to 2, "Винительный" to 3, "Дательный" to 4, "Местный" to 5, "Исходный" to 6),
@@ -772,58 +869,59 @@ fun addScoreForCase(userId: Long, case: String, filePath: String, block: Int) {
 
     val column = columnRanges[block]?.get(case)
     if (column == null) {
-        println("187. ❌ Ошибка: колонка для блока $block и падежа $case не найдена.")
+        println("❌ Ошибка: колонка для блока $block и падежа $case не найдена.")
         return
     }
-    println("188. ✅ Определена колонка для записи: $column.")
+    println("✅ Определена колонка для записи: $column.")
 
     val file = File(filePath)
     WorkbookFactory.create(file).use { workbook ->
         val sheet = workbook.getSheet("Состояние пользователя")
         if (sheet == null) {
-            println("189. ❌ Ошибка: Лист 'Состояние пользователя' не найден.")
+            println("❌ Ошибка: Лист 'Состояние пользователя' не найден.")
             return
         }
-        println("190. ✅ Лист 'Состояние пользователя' найден. Всего строк в листе: ${sheet.lastRowNum + 1}.")
+        println("✅ Лист 'Состояние пользователя' найден. Всего строк в листе: ${sheet.lastRowNum + 1}.")
 
         var userFound = false
 
         for (row in sheet) {
             val idCell = row.getCell(0)
             if (idCell == null) {
-                println("191. ⚠️ Ячейка ID отсутствует в строке ${row.rowNum + 1}, пропускаем.")
+                println("⚠️ Ячейка ID отсутствует в строке ${row.rowNum + 1}, пропускаем.")
                 continue
             }
 
             val idFromCell = try {
                 idCell.numericCellValue.toLong()
             } catch (e: Exception) {
-                println("192. ❌ Ошибка: не удалось прочитать ID из ячейки в строке ${row.rowNum + 1}. Значение: ${idCell}.")
+                println("❌ Ошибка: не удалось прочитать ID из ячейки в строке ${row.rowNum + 1}. Значение: ${idCell}.")
                 continue
             }
 
-            println("193. 🔎 Проверяем строку ${row.rowNum + 1}. ID в ячейке: $idFromCell.")
+            println("🔎 Проверяем строку ${row.rowNum + 1}. ID в ячейке: $idFromCell.")
 
             if (idFromCell == userId) {
                 userFound = true
-                println("194. ✅ Пользователь найден в строке ${row.rowNum + 1}. Начинаем обновление.")
+                println("✅ Пользователь найден в строке ${row.rowNum + 1}. Начинаем обновление.")
                 val targetCell = row.getCell(column) ?: row.createCell(column)
                 val currentValue = targetCell.numericCellValue.takeIf { it > 0 } ?: 0.0
-                println("195. 🔎 Текущее значение в колонке $column: $currentValue.")
+                println("🔎 Текущее значение в колонке $column: $currentValue.")
 
                 targetCell.setCellValue(currentValue + 1)
-                println("196. ✅ Новое значение в колонке $column: ${currentValue + 1}. Сохраняем файл.")
+                println("✅ Новое значение в колонке $column: ${currentValue + 1}. Сохраняем файл.")
 
                 safelySaveWorkbook(workbook, filePath)
-                println("197. ✅ Изменения сохранены в файле $filePath.")
+                println("✅ Изменения сохранены в файле $filePath.")
                 return
             }
         }
         if (!userFound) {
-            println("198. ⚠️ Пользователь с ID $userId не найден. Новая запись не создана.")
+            println("⚠️ Пользователь с ID $userId не найден. Новая запись не создана.")
         }
     }
 }
+
 
 fun calculateTotalScore(userId: Long, filePath: String, sheetName: String = "Состояние пользователя"): Int {
     println("199. 🔍 Начало вычисления общего счёта для пользователя $userId в файле $filePath, лист $sheetName.")
