@@ -43,9 +43,9 @@ val userCases = mutableMapOf<Long, String>() // Хранение выбранн�
 val userWords = mutableMapOf<Long, Pair<String, String>>() // Хранение выбранного слова для каждого пользователя
 val userBlocks = mutableMapOf<Long, Int>() // Хранение текущего блока для каждого пользователя
 val userBlockCompleted = mutableMapOf<Long, Triple<Boolean, Boolean, Boolean>>() // Состояния блоков
+val userColumnOrder = mutableMapOf<Long, MutableList<String>>() // Для хранения случайного порядка столбцов
 
-
-val tableFile = "Table.xlsx"
+val tableFile = "Алгоритм 3.7.xlsx"
 
 fun main() {
 
@@ -531,17 +531,18 @@ fun generateMessageFromRange(filePath: String, sheetName: String, range: String,
     val cells = extractCellsFromRange(sheet, range, wordUz)
     println("100. 📜 Извлечённые ячейки: $cells")
 
-    val firstCell = cells.firstOrNull() ?: ""
-    val blurredFirstCell = if (firstCell.isNotBlank()) "||$firstCell||" else ""
-    println("101. 🔑 Первый элемент: \"$firstCell\", Заблюренный: \"$blurredFirstCell\"")
+    val firstCell = cells.firstOrNull() ?: "" // Первая ячейка, не блюрим
+    println("101. 🔑 Первый элемент: \"$firstCell\"")
 
-    val messageBody = cells.drop(1).joinToString("\n")
+    val messageBody = cells.drop(1).joinToString("\n") // Остальные элементы объединяются
     println("102. 📄 Содержимое тела сообщения:\n$messageBody")
 
     workbook.close()
     println("103. 📕 Файл закрыт. Генерация завершена.")
-    return listOf(blurredFirstCell, messageBody).filter { it.isNotBlank() }.joinToString("\n\n")
+
+    return listOf(firstCell, messageBody).filter { it.isNotBlank() }.joinToString("\n\n") // Объединяем первую ячейку и тело
 }
+
 
 fun String.escapeMarkdownV2(): String {
     println("🔧 Экранирование Markdown для строки: \"$this\"")
@@ -923,46 +924,6 @@ fun addScoreForCase(userId: Long, case: String, filePath: String, block: Int) {
 }
 
 
-fun calculateTotalScore(userId: Long, filePath: String, sheetName: String = "Состояние пользователя"): Int {
-    println("199. 🔍 Начало вычисления общего счёта для пользователя $userId в файле $filePath, лист $sheetName.")
-    val columnIndices = (1..18) // Все столбцы, относящиеся к блокам (B-S)
-    val file = File(filePath)
-
-    WorkbookFactory.create(file).use { workbook ->
-        val sheet = workbook.getSheet(sheetName)
-        if (sheet == null) {
-            println("200. ❌ Лист $sheetName не найден. Возвращаем 0.")
-            return 0
-        }
-
-        println("201. ✅ Лист $sheetName найден. Начинаем обход строк.")
-        for (row in sheet) {
-            val idCell = row.getCell(0)
-            val userIdFromCell = when (idCell?.cellType) {
-                CellType.NUMERIC -> idCell.numericCellValue.toLong()
-                CellType.STRING -> idCell.stringCellValue.toDoubleOrNull()?.toLong()
-                else -> null
-            }
-
-            println("202. 🔎 Строка ${row.rowNum + 1}: ID пользователя в ячейке = $userIdFromCell.")
-            if (userIdFromCell == userId) {
-                val totalScore = columnIndices.sumOf { colIndex ->
-                    val cell = row.getCell(colIndex)
-                    val value = (cell?.numericCellValue ?: 0.0).toInt()
-                    println("203. 📊 Колонка $colIndex: значение = $value.")
-                    value
-                }
-                println("204. ✅ Общий счёт для пользователя $userId: $totalScore.")
-                return totalScore
-            }
-        }
-    }
-
-    println("205. ⚠️ Пользователь $userId не найден в таблице. Возвращаем 0.")
-    return 0
-}
-
-// processCellContent: Обрабатывает содержимое ячейки с учётом цвета текста и символа `+`.
 fun processCellContent(cell: Cell?, wordUz: String): String {
     println("206. 🔍 Обработка ячейки: $cell")
     if (cell == null) {
@@ -977,22 +938,30 @@ fun processCellContent(cell: Cell?, wordUz: String): String {
     val runs = richText.numFormattingRuns()
     println("209. 📊 Количество форматированных участков: $runs")
 
-    // Если форматированных участков нет, обрабатываем текст целиком
+    // Если форматированных участков нет, проверяем общий стиль ячейки
     if (runs == 0) {
-        println("⚠️ У ячейки нет форматированных участков. Используем весь текст.")
-        val processedContent = adjustWordUz(text, wordUz).escapeMarkdownV2()
-        println("✅ Результат для текста без форматирования: \"$processedContent\"")
-        return processedContent
+        val cellStyle = cell.cellStyle
+        val fontIndex = cellStyle.fontIndexAsInt
+        val workbook = cell.sheet.workbook as org.apache.poi.xssf.usermodel.XSSFWorkbook
+        val font = workbook.getFontAt(fontIndex) as XSSFFont
+
+        val isRed = getFontColor(font) == "#FF0000"
+        if (isRed) {
+            println("🔴 Вся ячейка имеет красный цвет. Блюрим текст.")
+            return "||${adjustWordUz(text, wordUz).escapeMarkdownV2()}||"
+        }
+        println("⚪ Текст не красный. Обрабатываем как есть.")
+        return adjustWordUz(text, wordUz).escapeMarkdownV2()
     }
 
-    // Если форматированные участки есть, обрабатываем их по частям
+    // Если есть форматированные участки
     val processedText = buildString {
         for (i in 0 until runs) {
             val start = richText.getIndexOfFormattingRun(i)
             val end = if (i + 1 < runs) richText.getIndexOfFormattingRun(i + 1) else text.length
             val substring = text.substring(start, end)
 
-            val font = richText.getFontOfFormattingRun(i) as XSSFFont?
+            val font = richText.getFontOfFormattingRun(i) as? XSSFFont
             val colorHex = font?.let { getFontColor(it) } ?: "Цвет не определён"
             println("    🎨 Цвет участка $i: $colorHex")
 
@@ -1013,12 +982,27 @@ fun processCellContent(cell: Cell?, wordUz: String): String {
 
 
 
+
+
 // Функция для извлечения цвета шрифта
 fun getFontColor(font: XSSFFont): String {
-    val color = font.xssfColor
-    val colorHex = color?.rgb?.joinToString(prefix = "#", separator = "") { "%02X".format(it) } ?: "Цвет не определён"
-    println("        🔍 Цвет шрифта: $colorHex")
-    return colorHex
+    println("🔍 Извлекаем цвет шрифта...")
+
+    val xssfColor = font.xssfColor // Получаем цвет шрифта
+    if (xssfColor == null) {
+        println("⚠️ Цвет шрифта не определён.")
+        return "Цвет не определён"
+    }
+
+    val rgb = xssfColor.rgb // Проверяем наличие RGB-цвета
+    return if (rgb != null) {
+        val colorHex = rgb.joinToString(prefix = "#", separator = "") { "%02X".format(it) }
+        println("🎨 Цвет шрифта: $colorHex")
+        colorHex
+    } else {
+        println("⚠️ RGB не найден.")
+        "Цвет не определён"
+    }
 }
 
 // Вспомогательный метод для обработки цветов с учётом оттенков
@@ -1045,8 +1029,3 @@ fun initializeUserBlockStates(chatId: Long, filePath: String) {
 
     println("2. ✅ Состояния блоков для пользователя $chatId: $userBlockCompleted")
 }
-
-
-
-
-
