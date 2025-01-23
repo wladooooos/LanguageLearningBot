@@ -29,7 +29,7 @@ import java.io.FileOutputStream
 import kotlin.experimental.and
 
 
-val caseRanges = mapOf(
+val PadezhRanges = mapOf(
     "Именительный" to listOf("A1-A7", "B1-B7", "C1-C7", "D1-D7", "E1-E7"),
     "Родительный" to listOf("A8-A14", "B8-B14", "C8-C14", "D8-D14", "E8-E14"),
     "Винительный" to listOf("A15-A21", "B15-B21", "C15-C21", "D15-D21", "E15-E21"),
@@ -38,11 +38,11 @@ val caseRanges = mapOf(
     "Исходный" to listOf("A36-A42", "B36-B42", "C36-C42", "D36-D42", "E36-E42")
 )
 
-val userStates = mutableMapOf<Long, Int>()
-val userCases = mutableMapOf<Long, String>() // Хранение выбранного падежа для каждого пользователя
+val userStates = mutableMapOf<Long, Int>() //Навигация внутри падежа
+val userPadezh = mutableMapOf<Long, String>() // Хранение выбранного падежа для каждого пользователя
 val userWords = mutableMapOf<Long, Pair<String, String>>() // Хранение выбранного слова для каждого пользователя
 val userBlocks = mutableMapOf<Long, Int>() // Хранение текущего блока для каждого пользователя
-val userBlockCompleted = mutableMapOf<Long, Triple<Boolean, Boolean, Boolean>>() // Состояния блоков
+val userBlockCompleted = mutableMapOf<Long, Triple<Boolean, Boolean, Boolean>>() // Состояния блоков (пройдено или нет)
 val userColumnOrder = mutableMapOf<Long, MutableList<String>>() // Для хранения случайного порядка столбцов
 
 val tableFile = "Алгоритм 3.7.xlsx"
@@ -54,16 +54,19 @@ fun main() {
 
         dispatch {
             command("start") {
-                val userId = message.chat.id
-                println("3. 🔍 Команда /start от пользователя: $userId")
+                val chatId = message.chat.id
+                println("3. 🔍 Команда /start от пользователя: $chatId")
 
-                userStates[userId] = 0
-                userBlocks[userId] = 1
-                userWords.remove(userId) // Удаляем старые данные о слове
+                // Полный сброс состояния
+                userStates.remove(chatId)
+                userPadezh.remove(chatId)
+                userWords.remove(chatId)
+                userBlocks[chatId] = 1
+                userBlockCompleted.remove(chatId)
+                userColumnOrder.remove(chatId)
 
-                initializeUserBlockStates(userId, tableFile) // Инициализация состояний блоков
-                sendWelcomeMessage(userId, bot)
-                sendCaseSelection(userId, bot, tableFile)
+                sendWelcomeMessage(chatId, bot)
+                handleBlock(chatId, bot, tableFile, null, null)
             }
 
             callbackQuery {
@@ -74,28 +77,24 @@ fun main() {
                 println("3. 🔍 Обработка callbackQuery: $data для пользователя $chatId")
 
                 when {
-                    data.startsWith("case:") -> {
-                        val selectedCase = data.removePrefix("case:")
-                        println("4. ✅ Выбранный падеж: $selectedCase")
-                        userCases[chatId] = selectedCase
+                    data.startsWith("Padezh:") -> {
+                        val selectedPadezh = data.removePrefix("Padezh:")
+                        println("4. ✅ Выбранный падеж: $selectedPadezh")
+                        userPadezh[chatId] = selectedPadezh
+                        userStates[chatId] = 0
                         bot.sendMessage(
                             chatId = ChatId.fromId(chatId),
-                            text = "Вы выбрали: $selectedCase."
+                            text = "Вы выбрали: $selectedPadezh."
                         )
                         if (userWords.containsKey(chatId)) {
                             val (wordUz, wordRus) = userWords[chatId]!!
-                            userStates[chatId] = 0
-                            bot.sendMessage(
-                                chatId = ChatId.fromId(chatId),
-                                text = "Начнем с уже выбранного слова: $wordUz ($wordRus)."
-                            )
-                            sendStateMessage(chatId, bot, tableFile, wordUz, wordRus)
+                            handleBlock(chatId, bot, tableFile, wordUz, wordRus)
                         } else {
                             bot.sendMessage(
                                 chatId = ChatId.fromId(chatId),
                                 text = "Теперь выберите слово."
                             )
-                            sendWordMessage(chatId, bot, tableFile)
+                            sendWordMessage(chatId, bot, tableFile) // Отправляем клавиатуру со словами
                         }
                     }
                     data.startsWith("word:") -> {
@@ -113,9 +112,11 @@ fun main() {
                             val wordUz = params[0]
                             val wordRus = params[1]
                             val currentState = userStates[chatId] ?: 0
-                            println("8. 🔎 Текущее состояние: $currentState. Обновляем.")
+                            println("8. 🔎Обновлено текущее состояние пользователя $chatId: ${userStates[chatId]}--------------------------------------------------------------------------------------------")
                             userStates[chatId] = currentState + 1
-                            sendStateMessage(chatId, bot, tableFile, wordUz, wordRus)
+
+                            println("🔍 Перед вызовом handleBlock: userBlocks[chatId] = ${userBlocks[chatId]} для пользователя $chatId")
+                            handleBlock(chatId, bot, tableFile, wordUz, wordRus)
                         }
                     }
                     data.startsWith("repeat:") -> {
@@ -133,16 +134,17 @@ fun main() {
                         userStates[chatId] = 0
                         sendWordMessage(chatId, bot, tableFile)
                     }
-                    data == "change_case" -> {
+                    data == "change_Padezh" -> {
                         println("11. 🔍 Выбор нового падежа для пользователя: $chatId")
-                        sendCaseSelection(chatId, bot, tableFile)
+                        userPadezh.remove(chatId)
+                        sendPadezhSelection(chatId, bot, tableFile)
                     }
                     data == "reset" -> {
                         println("12. 🔍 Полный сброс данных для пользователя: $chatId")
                         userWords.remove(chatId)
-                        userCases.remove(chatId)
+                        userPadezh.remove(chatId)
                         userStates.remove(chatId)
-                        sendCaseSelection(chatId, bot, tableFile)
+                        sendPadezhSelection(chatId, bot, tableFile)
                     }
                     data == "test" -> {
                         println("13. 🔍 Запрос на тестовую функцию от пользователя: $chatId")
@@ -151,15 +153,15 @@ fun main() {
                     data == "next_block" -> {
                         val currentBlock = userBlocks[chatId] ?: 1
                         val blockStates = userBlockCompleted[chatId] ?: Triple(false, false, false)
-
+                        userWords.remove(chatId)
                         if (currentBlock == 1 && blockStates.first ||
                             currentBlock == 2 && blockStates.second ||
                             currentBlock == 3) {
                             if (currentBlock < 3) {
                                 userBlocks[chatId] = currentBlock + 1
-                                println("5. ✅ Переход на следующий блок для пользователя $chatId. Новый блок: ${currentBlock + 1}")
+                                println("🔍 После переключения блока: userBlocks[chatId] = ${userBlocks[chatId]} для пользователя $chatId")
                                 initializeUserBlockStates(chatId, tableFile) // Обновляем состояния
-                                sendCaseSelection(chatId, bot, tableFile)
+                                sendPadezhSelection(chatId, bot, tableFile)
                             } else {
                                 bot.sendMessage(
                                     chatId = ChatId.fromId(chatId),
@@ -177,10 +179,11 @@ fun main() {
 
                     data == "prev_block" -> {
                         val currentBlock = userBlocks[chatId] ?: 1
+                        userWords.remove(chatId)
                         if (currentBlock > 1) {
                             userBlocks[chatId] = currentBlock - 1
                             println("7. 🔍 Возврат на предыдущий блок для пользователя $chatId. Новый блок: ${currentBlock - 1}")
-                            sendCaseSelection(chatId, bot, tableFile)
+                            sendPadezhSelection(chatId, bot, tableFile)
                         }
                     }
                 }
@@ -190,45 +193,176 @@ fun main() {
 
     bot.startPolling()
 }
-// sendCaseSelection: Отправляет пользователю клавиатуру для выбора падежа.
-fun sendCaseSelection(chatId: Long, bot: Bot, filePath: String) {
+fun handleBlock(chatId: Long, bot: Bot, filePath: String, wordUz: String?, wordRus: String?) {
+    println("Вход в функцию handleBlock(). ${userBlocks[chatId]}!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+    println("Параметры: chatId=$chatId, filePath=$filePath, wordUz=$wordUz, wordRus=$wordRus")
+
+    val currentBlock = userBlocks[chatId] ?: 1
+    println("🔍 Вход в handleBlock: chatId = $chatId, currentBlock = $currentBlock, userPadezh = ${userPadezh[chatId]}")
+
+    initializeUserBlockStates(chatId, filePath)
+    println("Состояния блоков пользователя после инициализации: ${userBlockCompleted[chatId]}")
+
+    // Проверяем, выбран ли падеж
+    if (userPadezh[chatId] == null) {
+        println("⚠️ Падеж не выбран для пользователя $chatId. Отправляем выбор падежа.")
+        sendPadezhSelection(chatId, bot, filePath)
+        return // Завершаем выполнение, чтобы дождаться выбора падежа
+    } else println("AAA падеж выбран ${userPadezh[chatId]}")
+
+    println("ААА Выбираем блок: $currentBlock")
+    when (currentBlock) {
+        1 -> {
+            println("AAA Обрабатываем блок $currentBlock для пользователя $chatId")
+            handleBlock1(chatId, bot, filePath, wordUz, wordRus)
+        }
+        2 -> {
+            println("AAA Обрабатываем блок $currentBlock для пользователя $chatId")
+            handleBlock2(chatId, bot, filePath, wordUz, wordRus)
+        }
+        3 -> {
+            println("AAA Обрабатываем блок $currentBlock для пользователя $chatId")
+            handleBlock3(chatId, bot, filePath, wordUz, wordRus)
+        }
+        else -> {
+            println("Неизвестный блок $currentBlock для пользователя $chatId")
+            bot.sendMessage(
+                chatId = ChatId.fromId(chatId),
+                text = "Неизвестный блок: $currentBlock"
+            )
+        }
+    }
+
+    println("Выход из функции handleBlock()")
+}
+
+
+// Функция обработки логики, когда пользователь находится в блоке 1
+fun handleBlock1(chatId: Long, bot: Bot, filePath: String, wordUz: String?, wordRus: String?) {
+    // Аналогичная логика для блока 3
+    sendStateMessage(chatId, bot, tableFile, wordUz, wordRus)
+    // Та же или иная логика для третьего блока
+}
+
+fun handleBlock2(chatId: Long, bot: Bot, filePath: String, wordUz: String?, wordRus: String?) {
+    println("A. 1. 🔍 Обработка блока 2 для пользователя $chatId")
+
+    // Определяем падеж и соответствующие диапазоны
+    val selectedPadezh = userPadezh[chatId]
+    println("A. 2. Выбранный падеж: $selectedPadezh")
+    if (selectedPadezh == null) {
+        println("A. 3. ❌ Ошибка: Падеж не выбран для пользователя $chatId")
+        bot.sendMessage(chatId = ChatId.fromId(chatId), text = "Ошибка: выберите падеж.")
+        return
+    }
+
+    val blockRanges = mapOf(
+        "Именительный" to listOf("A1-A7", "B1-B7", "C1-C7", "D1-D7", "E1-E7", "F1-F7"),
+        "Родительный" to listOf("A8-A14", "B8-B14", "C8-C14", "D8-D14", "E8-E14", "F8-F14"),
+        "Винительный" to listOf("A15-A21", "B15-B21", "C15-C21", "D15-D21", "E15-E21", "F15-F21"),
+        "Дательный" to listOf("A22-A28", "B22-B28", "C22-C28", "D22-D28", "E22-E28", "F22-F28"),
+        "Местный" to listOf("A29-A35", "B29-B35", "C29-C35", "D29-D35", "E29-E35", "F29-F35"),
+        "Исходный" to listOf("A36-A42", "B36-B42", "C36-C42", "D36-D42", "E36-E42", "F36-F42")
+    )[selectedPadezh] ?: return
+    println("A. 4. Диапазоны для выбранного падежа: $blockRanges")
+
+    // Если порядок столбцов для пользователя ещё не создан, создаём и сохраняем его
+    if (userColumnOrder[chatId].isNullOrEmpty()) {
+        userColumnOrder[chatId] = blockRanges.shuffled().toMutableList()
+        println("A. 5. 🔄 Новый перемешанный порядок столбцов для пользователя $chatId: ${userColumnOrder[chatId]}")
+    }
+
+    // Получаем текущий индекс (состояние) и список столбцов
+    val currentState = userStates[chatId] ?: 0
+    val shuffledColumns = userColumnOrder[chatId]!!
+    println("A. 6. Текущее состояние (индекс): $currentState")
+    println("A. 7. Перемешанный список столбцов: $shuffledColumns")
+
+    // Проверяем, завершены ли все столбцы
+    if (currentState >= shuffledColumns.size) {
+        println("A. 8. ✅ Все столбцы блока 2 завершены для пользователя $chatId")
+        addScoreForPadezh(chatId, selectedPadezh, filePath, block = 2)
+        sendFinalButtons(chatId, bot, wordUz, wordRus, filePath)
+        return
+    }
+
+    println("A. 9. 🔁 Начинаем обработку столбцов от $currentState до ${shuffledColumns.size - 1}")
+    for (i in currentState until shuffledColumns.size) {
+        val range = shuffledColumns[i]
+        println("A. 10. Текущий диапазон для обработки: $range")
+
+        val messageText = generateMessageFromRange(filePath, "Существительные 2", range, wordUz, wordRus)
+        println("A. 11. Сформированное сообщение для диапазона $range: $messageText")
+
+        // Проверяем, последний ли это столбец
+        val isLastMessage = i == shuffledColumns.size - 1
+        println("A. 12. Является ли это последний столбец: $isLastMessage")
+
+        // Отправляем сообщение
+        if (isLastMessage) {
+            println("A. 13. 📨 Отправка последнего сообщения без кнопки для пользователя $chatId")
+            bot.sendMessage(
+                chatId = ChatId.fromId(chatId),
+                text = messageText,
+                parseMode = ParseMode.MARKDOWN_V2
+            )
+            println("A. 14. ✅ Последний столбец обработан: $range")
+            addScoreForPadezh(chatId, selectedPadezh, filePath, block = 2)
+            sendFinalButtons(chatId, bot, wordUz, wordRus, filePath)
+        } else {
+            println("A. 15. 📨 Отправка сообщения с кнопкой 'Далее' для диапазона $range")
+            bot.sendMessage(
+                chatId = ChatId.fromId(chatId),
+                text = messageText,
+                parseMode = ParseMode.MARKDOWN_V2,
+                replyMarkup = InlineKeyboardMarkup.createSingleRowKeyboard(
+                    InlineKeyboardButton.CallbackData("Далее", "next:$wordUz:$wordRus")
+                )
+            )
+            println("A. 16. ✅ Сообщение для диапазона $range отправлено с кнопкой")
+        }
+
+        // Останавливаем цикл после отправки первого сообщения, чтобы дождаться действия пользователя
+        if (!isLastMessage) {
+            println("A. 18. Цикл завершен на столбце $range, ждем действия пользователя")
+            return
+        }
+    }
+    println("A. 19. 🔄 Завершение обработки блока 2 для пользователя $chatId")
+}
+
+
+
+
+// Функция обработки логики, когда пользователь находится в блоке 3
+fun handleBlock3(chatId: Long, bot: Bot, filePath: String, wordUz: String?, wordRus: String?) {
+    // Аналогичная логика для блока 3
+    sendStateMessage(chatId, bot, tableFile, wordUz, wordRus)
+    // Та же или иная логика для третьего блока
+}
+
+// Формирует и отправляет клавиатуру для выбора падежей текущего блока.
+fun sendPadezhSelection(chatId: Long, bot: Bot, filePath: String) {
+    println("🔍 Формируем клавиатуру выбора падежа для пользователя $chatId")
+
+    // Сбрасываем текущий выбранный падеж
+    userPadezh.remove(chatId)
+    userStates.remove(chatId)
+
     val currentBlock = userBlocks[chatId] ?: 1 // Получаем текущий блок пользователя
-    println("🔍 Формируем клавиатуру выбора падежа для блока $currentBlock")
+    println("🔍 Текущий блок: $currentBlock")
 
-    // Определяем падежи и соответствующие колонки для текущего блока
-    val columnRanges = mapOf(
-        1 to mapOf("Именительный" to 1, "Родительный" to 2, "Винительный" to 3, "Дательный" to 4, "Местный" to 5, "Исходный" to 6),
-        2 to mapOf("Именительный" to 7, "Родительный" to 8, "Винительный" to 9, "Дательный" to 10, "Местный" to 11, "Исходный" to 12),
-        3 to mapOf("Именительный" to 13, "Родительный" to 14, "Винительный" to 15, "Дательный" to 16, "Местный" to 17, "Исходный" to 18)
-    )
-
-    val caseColumns = columnRanges[currentBlock]
-    if (caseColumns == null) {
+    val PadezhColumns = getPadezhColumnsForBlock(currentBlock)
+    if (PadezhColumns == null) {
         println("⚠️ Ошибка: блок $currentBlock не найден.")
         bot.sendMessage(chatId = ChatId.fromId(chatId), text = "Ошибка: невозможно загрузить данные блока.")
         return
     }
 
-    // Читаем баллы пользователя для текущего блока
-    val userScores = readUserScores(chatId, filePath, caseColumns)
-    println("📊 Баллы пользователя для блока $currentBlock: $userScores")
+    val userScores = getUserScoresForBlock(chatId, filePath, PadezhColumns)
+    val buttons = generatePadezhSelectionButtons(currentBlock, PadezhColumns, userScores)
 
-    // Формируем кнопки с падежами и баллами
-    val buttons = caseColumns.keys.map { caseName ->
-        val score = userScores[caseName] ?: 0 // Если баллов нет, используем 0
-        InlineKeyboardButton.CallbackData("$caseName [$score]", "case:$caseName")
-    }.map { listOf(it) }.toMutableList()
-
-    // Добавляем кнопки для переключения блоков
-    if (currentBlock > 1) {
-        buttons.add(listOf(InlineKeyboardButton.CallbackData("⬅️ Предыдущий блок", "prev_block")))
-    }
-    if (currentBlock < 3) {
-        buttons.add(listOf(InlineKeyboardButton.CallbackData("➡️ Следующий блок", "next_block")))
-    }
-
-    // Отправляем сообщение с обновлённой клавиатурой
-    println("📤 Отправляем клавиатуру выбора падежа с баллами для пользователя $chatId")
+    // Отправляем сообщение
     bot.sendMessage(
         chatId = ChatId.fromId(chatId),
         text = "Выберите падеж для изучения блока $currentBlock:",
@@ -236,8 +370,19 @@ fun sendCaseSelection(chatId: Long, bot: Bot, filePath: String) {
     )
 }
 
-// Функция для чтения баллов пользователя из таблицы
-fun readUserScores(chatId: Long, filePath: String, caseColumns: Map<String, Int>): Map<String, Int> {
+
+// Функция для получения колонок текущего блока
+fun getPadezhColumnsForBlock(block: Int): Map<String, Int>? {
+    val columnRanges = mapOf(
+        1 to mapOf("Именительный" to 1, "Родительный" to 2, "Винительный" to 3, "Дательный" to 4, "Местный" to 5, "Исходный" to 6),
+        2 to mapOf("Именительный" to 7, "Родительный" to 8, "Винительный" to 9, "Дательный" to 10, "Местный" to 11, "Исходный" to 12),
+        3 to mapOf("Именительный" to 13, "Родительный" to 14, "Винительный" to 15, "Дательный" to 16, "Местный" to 17, "Исходный" to 18)
+    )
+    return columnRanges[block]
+}
+
+// Функция для чтения баллов пользователя для блока
+fun getUserScoresForBlock(chatId: Long, filePath: String, PadezhColumns: Map<String, Int>): Map<String, Int> {
     println("🔍 Считываем баллы пользователя $chatId из файла $filePath")
     val file = File(filePath)
     if (!file.exists()) {
@@ -257,18 +402,18 @@ fun readUserScores(chatId: Long, filePath: String, caseColumns: Map<String, Int>
         // Ищем строку пользователя
         for (row in sheet) {
             val idCell = row.getCell(0)
-            val userId = when (idCell?.cellType) {
+            val chatIdXlsx = when (idCell?.cellType) {
                 CellType.NUMERIC -> idCell.numericCellValue.toLong()
                 CellType.STRING -> idCell.stringCellValue.toLongOrNull()
                 else -> null
             }
 
-            if (userId == chatId) {
-                println("✅ Найдена строка пользователя $chatId. Извлекаем баллы...")
-                for ((caseName, colIndex) in caseColumns) {
+            if (chatId == chatIdXlsx) {
+                println("✅ Найдена строка пользователя $chatIdXlsx. Извлекаем баллы...")
+                for ((PadezhName, colIndex) in PadezhColumns) {
                     val cell = row.getCell(colIndex)
                     val score = cell?.numericCellValue?.toInt() ?: 0
-                    scores[caseName] = score
+                    scores[PadezhName] = score
                 }
                 break
             }
@@ -277,6 +422,30 @@ fun readUserScores(chatId: Long, filePath: String, caseColumns: Map<String, Int>
 
     println("✅ Считанные баллы для пользователя $chatId: $scores")
     return scores
+}
+
+// Функция для формирования кнопок выбора падежей
+fun generatePadezhSelectionButtons(
+    currentBlock: Int,
+    PadezhColumns: Map<String, Int>,
+    userScores: Map<String, Int>
+): List<List<InlineKeyboardButton>> {
+    println("🔧 Генерируем кнопки для выбора падежей в блоке $currentBlock")
+    val buttons = PadezhColumns.keys.map { PadezhName ->
+        val score = userScores[PadezhName] ?: 0 // Если баллов нет, используем 0
+        InlineKeyboardButton.CallbackData("$PadezhName [$score]", "Padezh:$PadezhName")
+    }.map { listOf(it) }.toMutableList()
+
+    // Добавляем кнопки для переключения блоков
+    if (currentBlock > 1) {
+        buttons.add(listOf(InlineKeyboardButton.CallbackData("⬅️ Предыдущий блок", "prev_block")))
+    }
+    if (currentBlock < 3) {
+        buttons.add(listOf(InlineKeyboardButton.CallbackData("➡️ Следующий блок", "next_block")))
+    }
+
+    println("✅ Кнопки успешно сгенерированы")
+    return buttons
 }
 
 // sendWelcomeMessage: Отправляет приветственное сообщение с кнопкой /start.
@@ -335,7 +504,6 @@ fun sendWordMessage(chatId: Long, bot: Bot, filePath: String) {
 }
 
 
-// createWordSelectionKeyboardFromExcel: Создает клавиатуру из данных в Excel-файле.
 // createWordSelectionKeyboardFromExcel: Создает клавиатуру из данных в Excel-файле.
 fun createWordSelectionKeyboardFromExcel(filePath: String, sheetName: String): InlineKeyboardMarkup {
     println("29. 🔍 Начало создания клавиатуры из файла: $filePath, лист: $sheetName")
@@ -407,36 +575,47 @@ fun extractWordsFromCallback(data: String): Pair<String, String> {
 }
 
 // sendStateMessage: Отправляет сообщение по текущему состоянию и падежу.
-fun sendStateMessage(chatId: Long, bot: Bot, filePath: String, wordUz: String, wordRus: String) {
+fun sendStateMessage(chatId: Long, bot: Bot, filePath: String, wordUz: String?, wordRus: String?) {
     println("49. 🔍 Формируем сообщение для пользователя: $chatId, слово: $wordUz, перевод: $wordRus")
 
-    val selectedCase = userCases[chatId]
-    if (selectedCase == null) {
+    val (selectedPadezh, rangesForPadezh, currentState) = validateUserState(chatId, bot) ?: return
+    processStateAndSendMessage(chatId, bot, filePath, wordUz, wordRus, selectedPadezh, rangesForPadezh, currentState)
+}
+
+fun validateUserState(chatId: Long, bot: Bot): Triple<String, List<String>, Int>? {
+    val selectedPadezh = userPadezh[chatId]
+    if (selectedPadezh == null) {
         println("50. ❌ Ошибка: выбранный падеж отсутствует.")
         bot.sendMessage(chatId = ChatId.fromId(chatId), text = "Ошибка: выберите падеж.")
-        return
+        return null
     }
+    println("51. ✅ Выбранный падеж: $selectedPadezh")
 
-    println("51. ✅ Выбранный падеж: $selectedCase")
-
-    val rangesForCase = caseRanges[selectedCase]
-    if (rangesForCase == null) {
-        println("52. ❌ Ошибка: диапазоны для падежа $selectedCase отсутствуют.")
+    val rangesForPadezh = PadezhRanges[selectedPadezh]
+    if (rangesForPadezh == null) {
+        println("52. ❌ Ошибка: диапазоны для падежа $selectedPadezh отсутствуют.")
         bot.sendMessage(chatId = ChatId.fromId(chatId), text = "Ошибка: диапазоны для падежа не найдены.")
-        return
+        return null
     }
 
     val currentState = userStates[chatId] ?: 0
     println("53. 🔎 Текущее состояние: $currentState")
 
-    if (currentState >= rangesForCase.size) {
-        println("54. ✅ Все этапы завершены для падежа: $selectedCase")
-        addScoreForCase(chatId, selectedCase, filePath)
+    return Triple(selectedPadezh, rangesForPadezh, currentState)
+}
+
+fun processStateAndSendMessage(
+    chatId: Long, bot: Bot, filePath: String, wordUz: String?, wordRus: String?,
+    selectedPadezh: String, rangesForPadezh: List<String>, currentState: Int
+) {
+    if (currentState >= rangesForPadezh.size) {
+        println("54. ✅ Все этапы завершены для падежа: $selectedPadezh")
+        addScoreForPadezh(chatId, selectedPadezh, filePath)
         sendFinalButtons(chatId, bot, wordUz, wordRus, filePath)
         return
     }
 
-    val range = rangesForCase[currentState]
+    val range = rangesForPadezh[currentState]
     println("55. 🔍 Генерация сообщения для диапазона: $range")
     val currentBlock = userBlocks[chatId] ?: 1 // Получаем текущий блок пользователя (по умолчанию 1)
     val listName = when (currentBlock) {
@@ -455,7 +634,14 @@ fun sendStateMessage(chatId: Long, bot: Bot, filePath: String, wordUz: String, w
     }
 
     println("57. ✅ Сообщение сгенерировано.")
-    if (currentState == rangesForCase.size - 1) {
+    sendMessageOrNextStep(chatId, bot, filePath, wordUz, wordRus, selectedPadezh, rangesForPadezh, currentState, messageText)
+}
+
+fun sendMessageOrNextStep(
+    chatId: Long, bot: Bot, filePath: String, wordUz: String?, wordRus: String?,
+    selectedPadezh: String, rangesForPadezh: List<String>, currentState: Int, messageText: String
+) {
+    if (currentState == rangesForPadezh.size - 1) {
         println("571 $messageText")
         bot.sendMessage(
             chatId = ChatId.fromId(chatId),
@@ -465,7 +651,7 @@ fun sendStateMessage(chatId: Long, bot: Bot, filePath: String, wordUz: String, w
         println("58. ✅ Последний этап завершен. Добавляем балл и отправляем финальное меню.")
         val currentBlock = userBlocks[chatId] ?: 1
         println("59. ✅ Уточняем текущий блок пользователя.")
-        addScoreForCase(chatId, selectedCase, filePath, currentBlock)
+        addScoreForPadezh(chatId, selectedPadezh, filePath, currentBlock)
         println("60. ✅ Добавляем балл для текущего блока.")
         println("61. ✅ Отправка финального меню...")
         sendFinalButtons(chatId, bot, wordUz, wordRus, filePath)
@@ -484,8 +670,9 @@ fun sendStateMessage(chatId: Long, bot: Bot, filePath: String, wordUz: String, w
 }
 
 
+
 // sendFinalButtons: Отправляет клавиатуру с финальными вариантами действий.
-fun sendFinalButtons(chatId: Long, bot: Bot, wordUz: String, wordRus: String, filePath: String) {
+fun sendFinalButtons(chatId: Long, bot: Bot, wordUz: String?, wordRus: String?, filePath: String) {
     println("92. 🔍 Формируем меню финальных действий для пользователя $chatId")
     val showNextStep = checkUserState(chatId, filePath) // Проверяем состояние пользователя
     println("93. 🔎 Состояние пользователя. Добавить кнопку 'Следующий блок': $showNextStep")
@@ -493,7 +680,7 @@ fun sendFinalButtons(chatId: Long, bot: Bot, wordUz: String, wordRus: String, fi
     val buttons = mutableListOf(
         listOf(InlineKeyboardButton.CallbackData("Повторить", "repeat:$wordUz:$wordRus")),
         listOf(InlineKeyboardButton.CallbackData("Изменить слово", "change_word")),
-        listOf(InlineKeyboardButton.CallbackData("Изменить падеж", "change_case")),
+        listOf(InlineKeyboardButton.CallbackData("Изменить падеж", "change_Padezh")),
         //listOf(InlineKeyboardButton.CallbackData("Изменить падеж и слово", "reset"))
     )
     val currentBlock = userBlocks[chatId] ?: 1
@@ -512,7 +699,7 @@ fun sendFinalButtons(chatId: Long, bot: Bot, wordUz: String, wordRus: String, fi
     )
 }
 
-fun generateMessageFromRange(filePath: String, sheetName: String, range: String, wordUz: String, wordRus: String): String {
+fun generateMessageFromRange(filePath: String, sheetName: String, range: String, wordUz: String?, wordRus: String?): String {
     println("96. 🔍 Генерация сообщения. Файл: $filePath, Лист: $sheetName, Диапазон: $range, Слова: $wordUz, $wordRus.")
     val file = File(filePath)
     if (!file.exists()) {
@@ -568,7 +755,7 @@ fun String.escapeMarkdownV2(): String {
 }
 
 
-fun adjustWordUz(content: String, wordUz: String): String {
+fun adjustWordUz(content: String, wordUz: String?): String {
     println("105. 🔍 Обработка слова \"$wordUz\" в контексте \"$content\"")
 
     // Вспомогательная функция для проверки, является ли символ гласным
@@ -584,7 +771,7 @@ fun adjustWordUz(content: String, wordUz: String): String {
                 // Если встречается '+', применяем правила замены
                 char == '+' && i + 1 < content.length -> {
                     val nextChar = content[i + 1]
-                    val lastChar = wordUz.lastOrNull()
+                    val lastChar = wordUz?.lastOrNull()
 
                     val replacement = when {
                         lastChar != null && lastChar.isVowel() && nextChar.isVowel() -> "s"
@@ -618,7 +805,7 @@ fun adjustWordUz(content: String, wordUz: String): String {
 
 
 // extractCellsFromRange: Извлекает и обрабатывает ячейки из указанного диапазона листа Excel.
-fun extractCellsFromRange(sheet: Sheet, range: String, wordUz: String): List<String> {
+fun extractCellsFromRange(sheet: Sheet, range: String, wordUz: String?): List<String> {
     println("108. 🔍 Извлечение ячеек из диапазона $range для слова \"$wordUz\"")
     val (start, end) = range.split("-").map { it.replace(Regex("[A-Z]"), "").toInt() - 1 }
     val column = range[0] - 'A'
@@ -641,8 +828,8 @@ fun extractCellsFromRange(sheet: Sheet, range: String, wordUz: String): List<Str
     }
 }
 
-fun checkUserState(userId: Long, filePath: String, sheetName: String = "Состояние пользователя" ): Boolean {
-    println("113. 🔍 Проверяем состояние пользователя. ID: $userId, Файл: $filePath, Лист: $sheetName")
+fun checkUserState(chatId: Long, filePath: String, sheetName: String = "Состояние пользователя" ): Boolean {
+    println("113. 🔍 Проверяем состояние пользователя. ID: $chatId, Файл: $filePath, Лист: $sheetName")
 
     val file = File(filePath)
     var userRow: Row? = null
@@ -665,7 +852,7 @@ fun checkUserState(userId: Long, filePath: String, sheetName: String = "Сост
             }
             println("117. 🔎 Проверяем строку: ${rowIndex + 1}, ID: $currentId")
 
-            if (currentId == userId) {
+            if (currentId == chatId) {
                 println("118. ✅ Пользователь найден в строке: ${rowIndex + 1}")
                 userRow = row
                 break
@@ -673,7 +860,7 @@ fun checkUserState(userId: Long, filePath: String, sheetName: String = "Сост
 
             if (currentId == null || currentId == 0L) {
                 println("119. ⚠️ Пустая ячейка. Записываем нового пользователя.")
-                idCell.setCellValue(userId.toDouble())
+                idCell.setCellValue(chatId.toDouble())
                 for (i in 1..6) {
                     row.createCell(i).setCellValue(0.0)
                 }
@@ -694,7 +881,7 @@ fun checkUserState(userId: Long, filePath: String, sheetName: String = "Сост
         } else {
             val newRowIndex = sheet.physicalNumberOfRows
             val newRow = sheet.createRow(newRowIndex)
-            newRow.createCell(0).setCellValue(userId.toDouble())
+            newRow.createCell(0).setCellValue(chatId.toDouble())
             for (i in 1..6) {
                 newRow.createCell(i).setCellValue(0.0)
             }
@@ -704,7 +891,7 @@ fun checkUserState(userId: Long, filePath: String, sheetName: String = "Сост
         }
     }
     println("$userBlockCompleted---------------------------------------------------------------------------------------------------------------------------")
-    initializeUserBlockStates(userId, tableFile) // Обновляем состояния
+    initializeUserBlockStates(chatId, tableFile) // Обновляем состояния
     println("$userBlockCompleted---------------------------------------------------------------------------------------------------------------------------")
     println("124. ✅ Проверка завершена. Все шаги завершены: $allCompleted")
     return allCompleted
@@ -748,8 +935,8 @@ fun safelySaveWorkbook(workbook: org.apache.poi.ss.usermodel.Workbook, filePath:
 
 
 
-fun addScoreForCase(userId: Long, case: String, filePath: String, sheetName: String = "Состояние пользователя") {
-    println("163. 🔍 Начинаем добавление балла. Пользователь: $userId, Падеж: $case")
+fun addScoreForPadezh(chatId: Long, Padezh: String, filePath: String, sheetName: String = "Состояние пользователя") {
+    println("163. 🔍 Начинаем добавление балла. Пользователь: $chatId, Падеж: $Padezh")
 
     val file = File(filePath)
     if (!file.exists()) {
@@ -762,17 +949,17 @@ fun addScoreForCase(userId: Long, case: String, filePath: String, sheetName: Str
             ?: throw IllegalArgumentException("165. ❌ Лист $sheetName не найден")
         println("166. ✅ Лист найден: $sheetName")
 
-        val caseColumnIndex = when (case) {
+        val PadezhColumnIndex = when (Padezh) {
             "Именительный" -> 1
             "Родительный" -> 2
             "Винительный" -> 3
             "Дательный" -> 4
             "Местный" -> 5
             "Исходный" -> 6
-            else -> throw IllegalArgumentException("167. ❌ Неизвестный падеж: $case")
+            else -> throw IllegalArgumentException("167. ❌ Неизвестный падеж: $Padezh")
         }
 
-        println("168. 🔎 Ищем пользователя $userId в таблице...")
+        println("168. 🔎 Ищем пользователя $chatId в таблице...")
         for (rowIndex in 1..sheet.lastRowNum) {
             val row = sheet.getRow(rowIndex) ?: continue
             val idCell = row.getCell(0)
@@ -783,24 +970,24 @@ fun addScoreForCase(userId: Long, case: String, filePath: String, sheetName: Str
             }
 
             println("169. 🔎 Проверяем строку ${rowIndex + 1}: ID = $currentId.")
-            if (currentId == userId) {
+            if (currentId == chatId) {
                 println("170. ✅ Пользователь найден в строке ${rowIndex + 1}")
-                val caseCell = row.getCell(caseColumnIndex) ?: row.createCell(caseColumnIndex)
-                val currentScore = caseCell.numericCellValue.takeIf { it > 0 } ?: 0.0
+                val PadezhCell = row.getCell(PadezhColumnIndex) ?: row.createCell(PadezhColumnIndex)
+                val currentScore = PadezhCell.numericCellValue.takeIf { it > 0 } ?: 0.0
                 println("171. 🔎 Текущее значение: $currentScore")
-                caseCell.setCellValue(currentScore + 1)
+                PadezhCell.setCellValue(currentScore + 1)
                 println("172. ✅ Новое значение: ${currentScore + 1}")
                 safelySaveWorkbook(workbook, filePath)
                 println("173. ✅ Балл добавлен и изменения сохранены.")
                 return
             }
         }
-        println("174. ⚠️ Пользователь $userId не найден. Этого не должно происходить на этом этапе.")
+        println("174. ⚠️ Пользователь $chatId не найден. Этого не должно происходить на этом этапе.")
     }
 }
 
-fun checkUserState(userId: Long, filePath: String, sheetName: String = "Состояние пользователя", block: Int = 1): Boolean {
-    println("175. 🔍 Проверка состояния пользователя. ID: $userId, файл: $filePath, лист: $sheetName, блок: $block.")
+fun checkUserState(chatId: Long, filePath: String, sheetName: String = "Состояние пользователя", block: Int = 1): Boolean {
+    //println("175. 🔍 Проверка состояния пользователя. ID: $chatId, файл: $filePath, лист: $sheetName, блок: $block.")
 
     val columnRanges = mapOf(
         1 to (1..6),
@@ -808,59 +995,59 @@ fun checkUserState(userId: Long, filePath: String, sheetName: String = "Сост
         3 to (13..18)
     )
     val columns = columnRanges[block] ?: run {
-        println("176. ⚠️ Неизвестный блок: $block. Возвращаем false.")
+        //println("176. ⚠️ Неизвестный блок: $block. Возвращаем false.")
         return false
     }
 
-    println("177. ✅ Диапазон колонок для блока $block: $columns.")
+    //println("177. ✅ Диапазон колонок для блока $block: $columns.")
 
     val file = File(filePath)
     if (!file.exists()) {
-        println("178. ❌ Файл $filePath не найден. Возвращаем false.")
+        //println("178. ❌ Файл $filePath не найден. Возвращаем false.")
         return false
     }
 
     WorkbookFactory.create(file).use { workbook ->
         val sheet = workbook.getSheet(sheetName)
         if (sheet == null) {
-            println("179. ❌ Лист $sheetName не найден. Возвращаем false.")
+            //println("179. ❌ Лист $sheetName не найден. Возвращаем false.")
             return false
         }
 
-        println("180. ✅ Лист $sheetName найден. Всего строк: ${sheet.lastRowNum + 1}.")
+        //println("180. ✅ Лист $sheetName найден. Всего строк: ${sheet.lastRowNum + 1}.")
 
         for (row in sheet) {
             val idCell = row.getCell(0) ?: continue
-            val userIdFromCell = when (idCell.cellType) {
+            val chatIdFromCell = when (idCell.cellType) {
                 CellType.NUMERIC -> idCell.numericCellValue.toLong()
                 CellType.STRING -> idCell.stringCellValue.toDoubleOrNull()?.toLong()
                 else -> null
             }
 
-            println("181. 🔎 Строка ${row.rowNum + 1}: ID в ячейке = $userIdFromCell.")
-            if (userIdFromCell == userId) {
-                println("182. ✅ Пользователь найден в строке ${row.rowNum + 1}. Проверяем выполнение всех условий...")
+            //println("181. 🔎 Строка ${row.rowNum + 1}: ID в ячейке = $chatIdFromCell.")
+            if (chatIdFromCell == chatId) {
+                //println("182. ✅ Пользователь найден в строке ${row.rowNum + 1}. Проверяем выполнение всех условий...")
 
                 val allColumnsCompleted = columns.all { colIndex ->
                     val cell = row.getCell(colIndex)
                     val value = cell?.numericCellValue ?: 0.0
-                    println("183. 📊 Колонка $colIndex: значение = $value. Выполнено? ${value > 0}")
+                    //println("183. 📊 Колонка $colIndex: значение = $value. Выполнено? ${value > 0}")
                     value > 0
                 }
 
-                println("184. ✅ Результат проверки для пользователя $userId: $allColumnsCompleted.")
+                println("184. ✅ Результат проверки для пользователя $chatId: $allColumnsCompleted. ЗАВЕРШАЕМ ПРОВЕРКУ!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
                 return allColumnsCompleted
             }
         }
     }
 
-    println("185. ⚠️ Пользователь $userId не найден в таблице. Возвращаем false.")
+    println("185. ⚠️ Пользователь $chatId не найден в таблице. Возвращаем false.")
     return false
 }
 
 
-fun addScoreForCase(userId: Long, case: String, filePath: String, block: Int) {
-    println("🔍 Начинаем добавление балла для пользователя $userId. Падеж: $case, Файл: $filePath, Блок: $block.")
+fun addScoreForPadezh(chatId: Long, Padezh: String, filePath: String, block: Int) {
+    println("🔍 Начинаем добавление балла для пользователя $chatId. Падеж: $Padezh, Файл: $filePath, Блок: $block.")
 
     val columnRanges = mapOf(
         1 to mapOf("Именительный" to 1, "Родительный" to 2, "Винительный" to 3, "Дательный" to 4, "Местный" to 5, "Исходный" to 6),
@@ -868,9 +1055,9 @@ fun addScoreForCase(userId: Long, case: String, filePath: String, block: Int) {
         3 to mapOf("Именительный" to 13, "Родительный" to 14, "Винительный" to 15, "Дательный" to 16, "Местный" to 17, "Исходный" to 18)
     )
 
-    val column = columnRanges[block]?.get(case)
+    val column = columnRanges[block]?.get(Padezh)
     if (column == null) {
-        println("❌ Ошибка: колонка для блока $block и падежа $case не найдена.")
+        println("❌ Ошибка: колонка для блока $block и падежа $Padezh не найдена.")
         return
     }
     println("✅ Определена колонка для записи: $column.")
@@ -902,7 +1089,7 @@ fun addScoreForCase(userId: Long, case: String, filePath: String, block: Int) {
 
             println("🔎 Проверяем строку ${row.rowNum + 1}. ID в ячейке: $idFromCell.")
 
-            if (idFromCell == userId) {
+            if (idFromCell == chatId) {
                 userFound = true
                 println("✅ Пользователь найден в строке ${row.rowNum + 1}. Начинаем обновление.")
                 val targetCell = row.getCell(column) ?: row.createCell(column)
@@ -918,13 +1105,13 @@ fun addScoreForCase(userId: Long, case: String, filePath: String, block: Int) {
             }
         }
         if (!userFound) {
-            println("⚠️ Пользователь с ID $userId не найден. Новая запись не создана.")
+            println("⚠️ Пользователь с ID $chatId не найден. Новая запись не создана.")
         }
     }
 }
 
 
-fun processCellContent(cell: Cell?, wordUz: String): String {
+fun processCellContent(cell: Cell?, wordUz: String?): String {
     println("206. 🔍 Обработка ячейки: $cell")
     if (cell == null) {
         println("207. ⚠️ Ячейка пуста. Возвращаем пустую строку.")
@@ -938,27 +1125,35 @@ fun processCellContent(cell: Cell?, wordUz: String): String {
     val runs = richText.numFormattingRuns()
     println("209. 📊 Количество форматированных участков: $runs")
 
-    // Если форматированных участков нет, проверяем общий стиль ячейки
-    if (runs == 0) {
-        val cellStyle = cell.cellStyle
-        val fontIndex = cellStyle.fontIndexAsInt
-        val workbook = cell.sheet.workbook as org.apache.poi.xssf.usermodel.XSSFWorkbook
-        val font = workbook.getFontAt(fontIndex) as XSSFFont
-
-        val isRed = getFontColor(font) == "#FF0000"
-        if (isRed) {
-            println("🔴 Вся ячейка имеет красный цвет. Блюрим текст.")
-            return "||${adjustWordUz(text, wordUz).escapeMarkdownV2()}||"
-        }
-        println("⚪ Текст не красный. Обрабатываем как есть.")
-        return adjustWordUz(text, wordUz).escapeMarkdownV2()
+    return if (runs == 0) {
+        processCellWithoutRuns(cell, text, wordUz)
+    } else {
+        processFormattedRuns(richText, text, wordUz)
     }
+}
 
-    // Если есть форматированные участки
-    val processedText = buildString {
-        for (i in 0 until runs) {
+// Обработка ячейки без форматированных участков
+fun processCellWithoutRuns(cell: Cell, text: String, wordUz: String?): String {
+    val font = getCellFont(cell)
+    val isRed = font != null && getFontColor(font) == "#FF0000"
+
+    return if (isRed) {
+        println("🔴 Вся ячейка имеет красный цвет. Блюрим текст.")
+        "||${adjustWordUz(text, wordUz).escapeMarkdownV2()}||"
+    } else {
+        println("⚪ Текст не красный. Обрабатываем как есть.")
+        adjustWordUz(text, wordUz).escapeMarkdownV2()
+    }
+}
+
+// Обработка форматированных участков текста
+fun processFormattedRuns(richText: XSSFRichTextString, text: String, wordUz: String?): String {
+    println("210. 🔧 Обработка форматированных участков текста.")
+
+    return buildString {
+        for (i in 0 until richText.numFormattingRuns()) {
             val start = richText.getIndexOfFormattingRun(i)
-            val end = if (i + 1 < runs) richText.getIndexOfFormattingRun(i + 1) else text.length
+            val end = if (i + 1 < richText.numFormattingRuns()) richText.getIndexOfFormattingRun(i + 1) else text.length
             val substring = text.substring(start, end)
 
             val font = richText.getFontOfFormattingRun(i) as? XSSFFont
@@ -974,11 +1169,18 @@ fun processCellContent(cell: Cell?, wordUz: String): String {
                 append(adjustedSubstring.escapeMarkdownV2())
             }
         }
+    }.also {
+        println("213. ✅ Результат обработки форматированных участков: \"$it\".")
     }
-
-    println("213. ✅ Результат обработки: \"$processedText\".")
-    return processedText
 }
+
+// Получение шрифта ячейки
+fun getCellFont(cell: Cell): XSSFFont? {
+    val workbook = cell.sheet.workbook as? org.apache.poi.xssf.usermodel.XSSFWorkbook ?: return null
+    val fontIndex = cell.cellStyle.fontIndexAsInt
+    return workbook.getFontAt(fontIndex) as? XSSFFont
+}
+
 
 
 
@@ -1021,11 +1223,16 @@ fun XSSFColor.getRgbWithTint(): ByteArray? {
 fun initializeUserBlockStates(chatId: Long, filePath: String) {
     println("1. 🔍 Инициализация состояний блоков для пользователя $chatId")
 
+    // Проверяем состояние каждого блока
     val block1Completed = checkUserState(chatId, filePath, block = 1)
     val block2Completed = checkUserState(chatId, filePath, block = 2)
     val block3Completed = checkUserState(chatId, filePath, block = 3)
 
+    println("🔍 Завершение блоков: Block1 = $block1Completed, Block2 = $block2Completed, Block3 = $block3Completed для пользователя $chatId")
+    println("🔍 Предыдущее состояние userBlockCompleted[chatId]: ${userBlockCompleted[chatId]}")
+
+    // Обновляем состояние блоков для пользователя
     userBlockCompleted[chatId] = Triple(block1Completed, block2Completed, block3Completed)
 
-    println("2. ✅ Состояния блоков для пользователя $chatId: $userBlockCompleted")
+    println("2. ✅ Обновленное состояние userBlockCompleted[chatId]: ${userBlockCompleted[chatId]}")
 }
