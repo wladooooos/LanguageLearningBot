@@ -47,12 +47,12 @@ val userColumnOrder = mutableMapOf<Long, MutableList<String>>() // Для хра
 var wordUz: String? = "bola"
 var wordRus: String? = "ребенок"
 val userReplacements = mutableMapOf<Long, Map<Int, String>>() // Хранение замен для чисел (1-9) для каждого пользователя
+var sheetColumnPairs = mutableMapOf<Long, Map<String, String>>() // Глобальная переменная для хранения пар лист/столбец (ключ и значение — строки)
 
 val tableFile = "Алгоритм 3.7.xlsx"
 
 fun main() {
     println("ЖЖЖ main // Основная функция запуска бота")
-
     val bot = bot {
         token = "7856005284:AAFVvPnRadWhaotjUZOmFyDFgUHhZ0iGsCo"
         println("Ж1 Инициализация бота с токеном")
@@ -86,6 +86,7 @@ fun main() {
                         println("Ж7 Выбранный падеж: chatId = $chatId, selectedPadezh = $selectedPadezh")
                         userPadezh[chatId] = selectedPadezh
                         userStates[chatId] = 0
+                        userColumnOrder.remove(chatId)
                         bot.sendMessage(
                             chatId = ChatId.fromId(chatId),
                             text = """Падеж: $selectedPadezh
@@ -145,11 +146,11 @@ fun main() {
                         }
                     }
                     data.startsWith("next_adjective:") -> {
-                        println("UUU Обработка 'Далее' для блока прилагательных: data = $data")
+                        println("Ж18 Обработка 'Далее' для блока прилагательных: data = $data")
 
                         val currentState = userStates[chatId] ?: 0
                         userStates[chatId] = currentState + 1
-                        println("U12 Обновлено состояние пользователя: chatId=$chatId, newState=${userStates[chatId]}")
+                        println("Ж19 Обновлено состояние пользователя: chatId=$chatId, newState=${userStates[chatId]}")
 
                         handleBlock(chatId, bot, tableFile, wordUz, wordRus)
                     }
@@ -174,15 +175,22 @@ fun main() {
                             "test" -> {
                                 userBlocks[chatId] = 4
                                 println("Пользователь $chatId выбрал тестовый блок")
-                                handleBlockTest(chatId, bot)
+                                checkBlocksBeforeTest(chatId, bot, tableFile)
                             }
                             "adjective1" -> {
                                 userBlocks[chatId] = 5
+                                userStates.remove(chatId)
+                                userPadezh.remove(chatId)
+                                userColumnOrder.remove(chatId)
+
                                 println("Пользователь $chatId выбрал блок прилагательных 1")
                                 handleBlockAdjective1(chatId, bot)
                             }
                             "adjective2" -> {
                                 userBlocks[chatId] = 6
+                                userStates.remove(chatId)
+                                userPadezh.remove(chatId)
+                                userColumnOrder.remove(chatId)
                                 println("Пользователь $chatId выбрал блок прилагательных 2")
                                 handleBlockAdjective2(chatId, bot)
                             }
@@ -196,14 +204,14 @@ fun main() {
                         }
                     }
                     data == "change_word" -> {
-                        println("Ж19 Выбор нового слова для пользователя: chatId = $chatId")
+                        println("Ж20 Выбор нового слова для пользователя: chatId = $chatId")
                         userStates[chatId] = 0
                         userWords.remove(chatId)
                         wordUz = null
                         wordRus = null
                         userColumnOrder.remove(chatId)
                         sendWordMessage(chatId, bot, tableFile)
-                        println("Ж20 Отправлена клавиатура для выбора слов: chatId = $chatId")
+                        println("Ж21111 Отправлена клавиатура для выбора слов: chatId = $chatId")
                     }
                     data == "change_Padezh" -> {
                         println("Ж21 Выбор нового падежа для пользователя: chatId = $chatId")
@@ -216,15 +224,19 @@ fun main() {
                         println("Ж23 Полный сброс данных для пользователя: chatId = $chatId")
                         userPadezh.remove(chatId)
                         userStates.remove(chatId)
+                        userColumnOrder.remove(chatId)
                         sendPadezhSelection(chatId, bot, tableFile)
                         println("Ж24 Сброс данных завершен: chatId = $chatId")
                     }
                     data == "next_block" -> {
                         val currentBlock = userBlocks[chatId] ?: 1
+                        // Пересчитываем состояние блоков перед проверкой
+                        initializeUserBlockStates(chatId, tableFile)
                         val blockStates = userBlockCompleted[chatId] ?: Triple(false, false, false)
                         println("Ж25 Обработка 'Следующий блок': chatId = $chatId, currentBlock = $currentBlock")
                         userStates.remove(chatId)
                         userPadezh.remove(chatId)
+                        userColumnOrder.remove(chatId)
 
                         if ((currentBlock == 1 && blockStates.first) ||
                             (currentBlock == 2 && blockStates.second) ||
@@ -263,17 +275,17 @@ fun main() {
                             println("Ж30 Возврат на предыдущий блок: chatId = $chatId, prevBlock = ${userBlocks[chatId]}")
                         }
                     }
-                    data == "test_nouns" -> {
-                        println("Ж30 Запуск теста по существительным: chatId = $chatId")
-                        handleBlockTest(chatId, bot)
-                        println("Ж31 Вызвана функция handleBlockTest")
-                    }
-                    data == "adjective_block" -> {
-                        userStates[chatId] = 0
-                        println("Ж32 Переход к блоку прилагательных: chatId = $chatId")
-                        handleBlockAdjective1(chatId, bot)
-                        println("Ж33 Вызвана функция handleBlockAdjective")
-                    }
+//                    data == "test_nouns" -> {
+//                        println("Ж30 Запуск теста по существительным: chatId = $chatId")
+//                        handleBlockTest(chatId, bot)
+//                        println("Ж31 Вызвана функция handleBlockTest")
+//                    }
+//                    data == "adjective_block" -> {
+//                        userStates[chatId] = 0
+//                        println("Ж32 Переход к блоку прилагательных: chatId = $chatId")
+//                        handleBlockAdjective1(chatId, bot)
+//                        println("Ж33 Вызвана функция handleBlockAdjective")
+//                    }
                 }
             }
         }
@@ -350,20 +362,20 @@ fun handleBlock1(chatId: Long, bot: Bot, filePath: String, wordUz: String?, word
 
 fun handleBlock2(chatId: Long, bot: Bot, filePath: String, wordUz: String?, wordRus: String?) {
     println("CCC handleBlock2 // Обработка блока 2")
-    println("C1 Вход в функцию. Параметры: chatId=$chatId, filePath=$filePath, wordUz=$wordUz, wordRus=$wordRus")
 
+    // Если не выбран падеж — отправляем меню выбора
     if (userPadezh[chatId] == null) {
-        println("C2 Падеж не выбран для пользователя. Отправляем выбор падежа.")
         sendPadezhSelection(chatId, bot, filePath)
         return
     }
-    println("C3 Падеж выбран: ${userPadezh[chatId]}")
 
+    // Если не выбрано слово — отправляем меню выбора
     if (wordUz.isNullOrBlank() || wordRus.isNullOrBlank()) {
-        println("Слово отсутствует. Запускаем выбор слова.")
-        sendWordMessage(chatId, bot, tableFile)
-    } else {
+        sendWordMessage(chatId, bot, filePath)
+        return
+    }
 
+    // Определяем диапазоны падежей
     val blockRanges = mapOf(
         "Именительный" to listOf("A1-A7", "B1-B7", "C1-C7", "D1-D7", "E1-E7", "F1-F7"),
         "Родительный" to listOf("A8-A14", "B8-B14", "C8-C14", "D8-D14", "E8-E14", "F8-F14"),
@@ -372,112 +384,104 @@ fun handleBlock2(chatId: Long, bot: Bot, filePath: String, wordUz: String?, word
         "Местный" to listOf("A29-A35", "B29-B35", "C29-C35", "D29-D35", "E29-E35", "F29-F35"),
         "Исходный" to listOf("A36-A42", "B36-B42", "C36-C42", "D36-D42", "E36-E42", "F36-F42")
     )[userPadezh[chatId]] ?: return
-    println("C4 Диапазоны для выбранного падежа: $blockRanges")
 
+    // Если порядок столбцов не сгенерирован — перемешиваем
     if (userColumnOrder[chatId].isNullOrEmpty()) {
         userColumnOrder[chatId] = blockRanges.shuffled().toMutableList()
-        println("C5 Новый перемешанный порядок столбцов: ${userColumnOrder[chatId]}")
     }
 
     val currentState = userStates[chatId] ?: 0
     val shuffledColumns = userColumnOrder[chatId]!!
-    println("C6 Текущее состояние: $currentState, Перемешанный список столбцов: $shuffledColumns")
+    println("Текущее состояние: $currentState, Колонки: $shuffledColumns")
 
+    // Если ВСЕ столбцы пройдены — отправляем финальное сообщение
     if (currentState >= shuffledColumns.size) {
-        println("C7 Все столбцы блока 2 завершены. Обновляем баллы.")
+        println("✅ Блок 2 завершен. Добавляем балл и отправляем финальное меню.")
         addScoreForPadezh(chatId, userPadezh[chatId].toString(), filePath, block = 2)
         sendFinalButtons(chatId, bot, wordUz, wordRus, filePath)
         return
     }
 
-    println("C8 Обработка столбцов от $currentState до ${shuffledColumns.size - 1}")
-    for (i in currentState until shuffledColumns.size) {
-        val range = shuffledColumns[i]
-        println("C9 Текущий диапазон для обработки: $range")
+    val range = shuffledColumns[currentState]
+    val messageText = generateMessageFromRange(filePath, "Существительные 2", range, wordUz, wordRus)
+    val isLastMessage = currentState == shuffledColumns.size - 1
 
-        val messageText = generateMessageFromRange(filePath, "Существительные 2", range, wordUz, wordRus)
-        println("C10 Сформированное сообщение для диапазона: $messageText")
-
-        val isLastMessage = i == shuffledColumns.size - 1
-        println("C11 Последний столбец? $isLastMessage")
-
-        if (isLastMessage) {
-            println("C12 Отправляем последнее сообщение без кнопки.")
-            bot.sendMessage(
-                chatId = ChatId.fromId(chatId),
-                text = messageText,
-                parseMode = ParseMode.MARKDOWN_V2
+    // Отправляем сообщение
+    if (isLastMessage) {
+        bot.sendMessage(chatId = ChatId.fromId(chatId), text = messageText, parseMode = ParseMode.MARKDOWN_V2)
+        addScoreForPadezh(chatId, userPadezh[chatId].toString(), filePath, block = 2)
+        sendFinalButtons(chatId, bot, wordUz, wordRus, filePath)
+    } else {
+        bot.sendMessage(
+            chatId = ChatId.fromId(chatId),
+            text = messageText,
+            parseMode = ParseMode.MARKDOWN_V2,
+            replyMarkup = InlineKeyboardMarkup.createSingleRowKeyboard(
+                InlineKeyboardButton.CallbackData("Далее", "next:$wordUz:$wordRus")
             )
-            addScoreForPadezh(chatId, userPadezh[chatId].toString(), filePath, block = 2)
-            sendFinalButtons(chatId, bot, wordUz, wordRus, filePath)
-        } else {
-            println("C13 Отправляем сообщение с кнопкой 'Далее'.")
-            bot.sendMessage(
-                chatId = ChatId.fromId(chatId),
-                text = messageText,
-                parseMode = ParseMode.MARKDOWN_V2,
-                replyMarkup = InlineKeyboardMarkup.createSingleRowKeyboard(
-                    InlineKeyboardButton.CallbackData("Далее", "next:$wordUz:$wordRus")
-                )
-            )
-        }
-
-        if (!isLastMessage) {
-            println("C14 Ожидание действия пользователя.")
-            return
-        }
+        )
     }
-    }
-    println("C15 Завершение обработки блока 2.")
 }
 
+
 fun handleBlock3(chatId: Long, bot: Bot, filePath: String, wordUz: String?, wordRus: String?) {
-    println("DDD handleBlock3 // Обработка третьего большого блока для пользователя")
+    println("🚀 handleBlock3 // Запуск блока 3 для пользователя $chatId")
 
     if (wordUz.isNullOrBlank() || wordRus.isNullOrBlank()) {
         sendWordMessage(chatId, bot, filePath)
-        println("D1 Слова не выбраны, отправлено сообщение для выбора слов: chatId=$chatId")
+        println("❌ Ошибка: слова не выбраны, запрошен повторный выбор.")
         return
     }
 
-    val rangesForBlock3 = listOf(
+    val allRanges = listOf(
         "A1-A7", "B1-B7", "C1-C7", "D1-D7", "E1-E7", "F1-F7",
         "A8-A14", "B8-B14", "C8-C14", "D8-D14", "E8-E14", "F8-F14",
-        "A15-A21", "B15-B21", "C15-C21", "D15-D21", "E15-E21", "F15-F21"
+        "A15-A21", "B15-B21", "C15-C21", "D15-D21", "E15-E21", "F15-F21",
+        "A22-A28", "B22-B28", "C22-C28", "D22-D28", "E22-E28", "F22-F28",
+        "A29-A35", "B29-B35", "C29-C35", "D29-D35", "E29-E35", "F29-F35"
     )
-    println("D2 Диапазоны мини-блоков для блока 3 инициализированы: $rangesForBlock3")
 
+    // Если у пользователя еще нет порядка столбцов — перемешиваем
     if (userColumnOrder[chatId].isNullOrEmpty()) {
-        userColumnOrder[chatId] = rangesForBlock3.shuffled().toMutableList()
-        println("D3 Порядок столбцов перемешан и сохранён: ${userColumnOrder[chatId]}")
+        userColumnOrder[chatId] = allRanges.shuffled().toMutableList()
+        println("🔀 Перемешали мини-блоки для пользователя $chatId: ${userColumnOrder[chatId]}")
     }
-
-    val currentState = userStates[chatId] ?: 0
-    println("D4 Текущее состояние пользователя: chatId=$chatId, currentState=$currentState")
 
     val shuffledRanges = userColumnOrder[chatId]!!
-    println("D5 Текущий перемешанный список диапазонов: $shuffledRanges")
+    val currentState = userStates[chatId] ?: 0
+    println("📌 Текущее состояние пользователя: $currentState")
 
-    if (currentState >= shuffledRanges.size) {
-        sendFinalButtons(chatId, bot, wordUz, wordRus, filePath)
-        println("D6 Все мини-блоки завершены, отправлено финальное меню: chatId=$chatId")
-        return
+    // Загружаем баллы пользователя
+    val completedRanges = getCompletedRanges(chatId, filePath)
+    println("✅ Пройденные мини-блоки: $completedRanges")
+
+    // Ищем первый неповторяющийся диапазон
+    var currentRange: String? = null
+    for (range in shuffledRanges) {
+        if (!completedRanges.contains(range)) {
+            currentRange = range
+            break
+        }
     }
 
-    val currentRange = shuffledRanges[currentState]
-    println("D7 Обрабатываем текущий диапазон: currentRange=$currentRange")
+    // Если ВСЕ 30 диапазонов пройдены, то берем текущий (изначально заданный) диапазон
+    if (currentRange == null) {
+        println("⚠️ ВСЕ 30 мини-блоков уже пройдены! Берем текущий из списка.")
+        currentRange = shuffledRanges[currentState % shuffledRanges.size]
+    }
+
+    println("🎯 Выбран диапазон: $currentRange")
 
     val messageText = try {
-        generateMessageFromRange(filePath, "Существительные 3", currentRange, wordUz, wordRus)
+        generateMessageFromRange(filePath, "Существительные 3", currentRange!!, wordUz, wordRus)
     } catch (e: Exception) {
         bot.sendMessage(chatId = ChatId.fromId(chatId), text = "Ошибка при формировании сообщения.")
-        println("D8 Ошибка при генерации сообщения: ${e.message}")
+        println("❌ Ошибка при генерации сообщения: ${e.message}")
         return
     }
-    println("D9 Сообщение сгенерировано: \"$messageText\"")
 
-    val isLastRange = currentState == shuffledRanges.size - 1
-    println("D10 Проверка на последний диапазон: isLastRange=$isLastRange")
+    val isLastRange = currentState == 5 // 6 сообщений всего
+    println("📩 Отправка сообщения: \"$messageText\"")
 
     bot.sendMessage(
         chatId = ChatId.fromId(chatId),
@@ -487,19 +491,20 @@ fun handleBlock3(chatId: Long, bot: Bot, filePath: String, wordUz: String?, word
             InlineKeyboardButton.CallbackData("Далее", "next:$wordUz:$wordRus")
         )
     )
-    println("D11 Сообщение отправлено пользователю: chatId=$chatId, isLastRange=$isLastRange")
+
+    // Сохраняем прогресс
+    saveUserProgressBlok3(chatId, filePath, currentRange!!)
+    println("💾 Прогресс сохранен: $currentRange")
 
     if (!isLastRange) {
-        userStates[chatId] = currentState + 1
-        println("D12 Обновлено состояние пользователя: chatId=$chatId, newState=${userStates[chatId]}")
+        println("📌 Переход к следующему шагу")
     } else {
-        println("D13 Вызов обновления прогресса для мини-блоков")
+        println("🏁 Мини-блоки завершены, вызываем финальное меню")
         updateUserProgressForMiniBlocks(chatId, filePath, shuffledRanges.indices.toList())
         sendFinalButtons(chatId, bot, wordUz, wordRus, filePath)
-        println("D14 Финальное меню отправлено после завершения всех мини-блоков: chatId=$chatId")
     }
-    println("D15 Завершение handleBlock3 для пользователя: chatId=$chatId")
 }
+
 
 fun handleBlockTest(chatId: Long, bot: Bot) {
     println("TTT handleBlockTest // Обработка теста по существительным")
@@ -509,14 +514,14 @@ fun handleBlockTest(chatId: Long, bot: Bot) {
         chatId = ChatId.fromId(chatId),
         text = "Еще не реализовано.",
         replyMarkup = InlineKeyboardMarkup.createSingleRowKeyboard(
-            InlineKeyboardButton.CallbackData("Перейти к прилагательным", "adjective_block")
+            InlineKeyboardButton.CallbackData("Перейти к прилагательным", "block:adjective1")
         )
     )
     println("T2 Сообщение-заглушка отправлено пользователю $chatId")
 }
 
 fun handleBlockAdjective1(chatId: Long, bot: Bot) {
-    println("UUU handleBlockAdjective // Переход к блоку с прилагательными")
+    println("UUU handleBlockAdjective1 // Переход к блоку с прилагательными")
     println("U1 Вход в функцию. Параметры: chatId=$chatId")
 
 
@@ -527,8 +532,8 @@ fun handleBlockAdjective1(chatId: Long, bot: Bot) {
 
     // Инициализация замен, если их ещё нет
     if (userReplacements[chatId].isNullOrEmpty()) {
-        userReplacements[chatId] = generateReplacements(tableFile)
-        println("U3 Сгенерированы замены: ${userReplacements[chatId]}")
+        initializeSheetColumnPairsFromFile(chatId)
+        println("U3 Сгенерированы замены: ${userReplacements[chatId]} -------------------------------------------------------------------------")
     }
 
 
@@ -538,7 +543,9 @@ fun handleBlockAdjective1(chatId: Long, bot: Bot) {
     )
     println("U4 Диапазоны мини-блоков: $rangesForAdjectives")
 
+    println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!  ${userStates[chatId]}")
     val currentState = userStates[chatId] ?: 0
+    println("2!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!  $currentState")
     println("U5 Текущее состояние пользователя: $currentState")
 
     // Если все мини-блоки завершены
@@ -568,6 +575,7 @@ fun handleBlockAdjective1(chatId: Long, bot: Bot) {
     if (userStates[chatId] == null) { // Если пользователь только вошел в блок
         sendReplacementsMessage(chatId, bot) // Отправляем сообщение с 9 парами слов
     }
+
 
 //    bot.sendMessage(
 //        chatId = ChatId.fromId(chatId),
@@ -607,54 +615,53 @@ fun handleBlockAdjective1(chatId: Long, bot: Bot) {
 }
 
 fun handleBlockAdjective2(chatId: Long, bot: Bot) {
-    println("UUU handleBlockAdjective // Переход к блоку с прилагательными")
-    println("U1 Вход в функцию. Параметры: chatId=$chatId")
+    println("UUU2 handleBlockAdjective2 // Переход к блоку с прилагательными")
+    println("U21 Вход в функцию. Параметры: chatId=$chatId")
 
 
     val currentBlock = userBlocks[chatId] ?: 1
     //val sheetName = if (currentBlock == 5) "Прилагательные 1" else "Прилагательные 2"
-    println("U2 Текущий блок: $currentBlock, Лист: Прилагательные 2")
+    println("U22 Текущий блок: $currentBlock, Лист: Прилагательные 2")
 
 
     // Инициализация замен, если их ещё нет
     if (userReplacements[chatId].isNullOrEmpty()) {
-        userReplacements[chatId] = generateReplacements(tableFile)
-        println("U3 Сгенерированы замены: ${userReplacements[chatId]}")
+        initializeSheetColumnPairsFromFile(chatId)
+        println("U23 Сгенерированы замены: ${userReplacements[chatId]}++++++++++++++++++++++++++++++++++++++++++++++++++++")
     }
-
 
     val rangesForAdjectives = listOf(
         "A1-A7", "B1-B7", "C1-C7", "D1-D7", "E1-E7",
         "F1-F7", "G1-G7", "H1-H7", "I1-I7"
     )
-    println("U4 Диапазоны мини-блоков: $rangesForAdjectives")
+    println("U24 Диапазоны мини-блоков: $rangesForAdjectives")
 
     val currentState = userStates[chatId] ?: 0
-    println("U5 Текущее состояние пользователя: $currentState")
+    println("U25 Текущее состояние пользователя: $currentState")
 
     // Если все мини-блоки завершены
     if (currentState >= rangesForAdjectives.size) {
-        println("U6 Все мини-блоки завершены, отправляем финальное меню.")
+        println("U26 Все мини-блоки завершены, отправляем финальное меню.")
         sendFinalButtonsForAdjectives(chatId, bot)
         userReplacements.remove(chatId) // Очищаем замены
         return
     }
 
     val currentRange = rangesForAdjectives[currentState]
-    println("U7 Обрабатываем текущий диапазон: $currentRange")
+    println("U27 Обрабатываем текущий диапазон: $currentRange")
 
     // Генерация сообщения с заменами
     val messageText = try {
         generateAdjectiveMessage(tableFile, "Прилагательные 2", currentRange, userReplacements[chatId]!!)
     } catch (e: Exception) {
         bot.sendMessage(chatId = ChatId.fromId(chatId), text = "Ошибка при формировании сообщения.")
-        println("U8 Ошибка при генерации сообщения: ${e.message}")
+        println("U28 Ошибка при генерации сообщения: ${e.message}")
         return
     }
-    println("U9 Сообщение сгенерировано: $messageText")
+    println("U29 Сообщение сгенерировано: $messageText")
 
     val isLastRange = currentState == rangesForAdjectives.size - 1
-    println("U10 Проверка на последний диапазон: $isLastRange")
+    println("U210 Проверка на последний диапазон: $isLastRange")
 
     if (userStates[chatId] == null) { // Если пользователь только вошел в блок
         sendReplacementsMessage(chatId, bot) // Отправляем сообщение с 9 парами слов
@@ -680,7 +687,7 @@ fun handleBlockAdjective2(chatId: Long, bot: Bot) {
             )
         )
     }
-    println("U11 Сообщение отправлено пользователю: chatId=$chatId")
+    println("U211 Сообщение отправлено пользователю: chatId=$chatId")
 
 //    if (!isLastRange) {
 //        userStates[chatId] = currentState + 1
@@ -688,25 +695,34 @@ fun handleBlockAdjective2(chatId: Long, bot: Bot) {
 //    }
 }
 
-fun generateReplacements(filePath: String): Map<Int, String> {
-    println("VVV generateReplacements // Генерация списка замен для чисел")
-    println("V1 Вход в функцию. Параметры: filePath=$filePath")
+fun generateReplacements(chatId: Long) {
+    println("VVV generateReplacements // Генерация списка замен для пользователя $chatId")
 
-    val nouns = extractRandomWords(filePath, "Существительные", 0, 3)
-    val verbs = extractRandomWords(filePath, "Глаголы", 0, 3)
-    val adjectives = extractRandomWords(filePath, "Прилагательные", 0, 3)
-
-    val replacements = (1..9).associateWith {
-        when (it) {
-            in 1..3 -> nouns[it - 1]
-            in 4..6 -> verbs[it - 4]
-            in 7..9 -> adjectives[it - 7]
-            else -> ""
-        }
+    // Проверяем, есть ли данные для пользователя
+    val userPairs = sheetColumnPairs[chatId] ?: run {
+        println("❌ Ошибка: Нет данных в sheetColumnPairs для пользователя $chatId")
+        return
     }
-    println("V2 Список замен сгенерирован: $replacements")
-    return replacements
+
+    // Берем только ключи (узбекские слова)
+    val keysList = userPairs.keys.toList()
+    if (keysList.size < 9) {
+        println("⚠️ Предупреждение: у пользователя $chatId недостаточно пар для замены.")
+    }
+
+    // Создаем изменяемый Map (MutableMap)
+    val replacements = mutableMapOf<Int, String>()
+    keysList.take(9).forEachIndexed { index, key ->
+        replacements[index + 1] = key
+    }
+
+    // Присваиваем userReplacements для конкретного пользователя
+    userReplacements[chatId] = replacements
+    println("✅ Список замен обновлен для пользователя $chatId: $replacements")
 }
+
+
+
 
 fun generateAdjectiveMessage(
     filePath: String,
@@ -729,15 +745,25 @@ fun generateAdjectiveMessage(
 }
 
 fun sendFinalButtonsForAdjectives(chatId: Long, bot: Bot) {
-    println("XXX sendFinalButtonsForAdjectives // Отправка финального меню для прилагательных")
+    println("XXX sendFinalButtonsForAdjectives // Отправка финального меню")
     println("X1 Вход в функцию. Параметры: chatId=$chatId")
 
+    val currentBlock = userBlocks[chatId] ?: 5  // Получаем текущий блок, по умолчанию 5
+    val repeatCallback = if (currentBlock == 5) "block:adjective1" else "block:adjective2"
+
+    val navigationButton = if (currentBlock == 5) {
+        InlineKeyboardButton.CallbackData("Следующий блок", "block:adjective2")
+    } else {
+        InlineKeyboardButton.CallbackData("Предыдущий блок", "block:adjective1")
+    }
+
     val buttons = listOf(
-        listOf(InlineKeyboardButton.CallbackData("Повторить", "repeat:")),
-        listOf(InlineKeyboardButton.CallbackData("Изменить набор слов", "repeat:")),
+        listOf(InlineKeyboardButton.CallbackData("Повторить", repeatCallback)),
+        listOf(InlineKeyboardButton.CallbackData("Изменить набор слов", repeatCallback)),
         listOf(InlineKeyboardButton.CallbackData("Назад к существительным", "back_to_nouns")),
-        listOf(InlineKeyboardButton.CallbackData("Следующий блок", "next:"))
+        listOf(navigationButton)
     )
+
     bot.sendMessage(
         chatId = ChatId.fromId(chatId),
         text = "Вы завершили все этапы работы с этим блоком прилагательных. Что будем делать дальше?",
@@ -745,6 +771,8 @@ fun sendFinalButtonsForAdjectives(chatId: Long, bot: Bot) {
     )
     println("X2 Финальное меню отправлено пользователю: chatId=$chatId")
 }
+
+
 
 fun extractRandomWords(filePath: String, sheetName: String, column: Int, count: Int): List<String> {
     println("YYY extractRandomWords // Извлечение случайных слов из Excel")
@@ -1135,7 +1163,7 @@ fun sendFinalButtons(chatId: Long, bot: Bot, wordUz: String?, wordRus: String?, 
 
     // Если пользователь находится в третьем блоке, добавляем кнопку "Пройти тест по существительным"
     if (currentBlock == 3) {
-        buttons.add(listOf(InlineKeyboardButton.CallbackData("Пройти тест по существительным", "test_nouns")))
+        buttons.add(listOf(InlineKeyboardButton.CallbackData("Пройти тест по существительным", "block:test")))
         println("R3 Добавлена кнопка 'Пройти тест по существительным'")
     } else {
         // Для других блоков оставляем кнопку "Изменить падеж"
@@ -1699,26 +1727,19 @@ fun XSSFColor.getRgbWithTint(): ByteArray? {
 
 // Добавляем инициализацию состояний блоков
 fun initializeUserBlockStates(chatId: Long, filePath: String) {
-    println("hhh initializeUserBlockStates // Инициализация состояний блоков пользователя")
-
     println("h1 Входные параметры: chatId=$chatId, filePath=$filePath")
 
-    // Проверяем состояние каждого блока
     val block1Completed = checkUserState(chatId, filePath, block = 1)
-    println("h2 Состояние блока 1 для пользователя $chatId: $block1Completed")
-
     val block2Completed = checkUserState(chatId, filePath, block = 2)
-    println("h3 Состояние блока 2 для пользователя $chatId: $block2Completed")
+    val block3Completed = checkUserStateBlock3(chatId, filePath) // 🔥 Исправили для блока 3
 
-    val block3Completed = checkUserState(chatId, filePath, block = 3)
-    println("h4 Состояние блока 3 для пользователя $chatId: $block3Completed")
+    println("h2 Состояние блока 1: $block1Completed")
+    println("h3 Состояние блока 2: $block2Completed")
+    println("h4 Состояние блока 3: $block3Completed (Пройдено мини-блоков: ${getCompletedRanges(chatId, filePath).size}/30)")
 
-    println("h5 Предыдущее состояние userBlockCompleted[chatId]: ${userBlockCompleted[chatId]}")
-
-    // Обновляем состояние блоков для пользователя
     userBlockCompleted[chatId] = Triple(block1Completed, block2Completed, block3Completed)
-    println("h6 ✅ Обновлённое состояние userBlockCompleted[chatId]: ${userBlockCompleted[chatId]}")
 }
+
 
 // Новая функция: Обновление прогресса пользователя для мини-блоков
 fun updateUserProgressForMiniBlocks(chatId: Long, filePath: String, completedMiniBlocks: List<Int>) {
@@ -1790,20 +1811,21 @@ fun sendStartMenu(chatId: Long, bot: Bot) {
 }
 
 fun sendReplacementsMessage(chatId: Long, bot: Bot) {
-    println("### sendReplacementsMessage // Отправка сообщения с 9 парами слов")
+    println("### sendReplacementsMessage // Отправка сообщения с 9 парами слов из sheetColumnPairs")
 
-    val replacements = userReplacements[chatId]
-    if (replacements.isNullOrEmpty()) {
-        println("❌ Ошибка: Замены для пользователя $chatId отсутствуют.")
+    val userPairs = sheetColumnPairs[chatId]
+
+    if (userPairs.isNullOrEmpty()) {
+        println("❌ Ошибка: Данные в sheetColumnPairs отсутствуют для пользователя $chatId.")
         bot.sendMessage(
             chatId = ChatId.fromId(chatId),
-            text = "Ошибка: Не удалось найти данные для отправки."
+            text = "Ошибка: Данные для отправки не найдены."
         )
         return
     }
 
-    // Формируем сообщение с парами
-    val messageText = replacements.entries.joinToString("\n") { (key, value) ->
+    // Формируем сообщение в нужном формате
+    val messageText = userPairs.entries.joinToString("\n") { (key, value) ->
         "$key - $value"
     }
 
@@ -1812,5 +1834,260 @@ fun sendReplacementsMessage(chatId: Long, bot: Bot) {
         text = messageText
     )
 
-    println("✅ Сообщение отправлено пользователю $chatId")
+    println("✅ Сообщение отправлено пользователю $chatId:\n$messageText")
+}
+
+
+
+fun saveUserProgressBlok3(chatId: Long, filePath: String, range: String) {
+    println("📌 saveUserProgressBlok3 // Сохранение прогресса пользователя")
+
+    val file = File(filePath)
+    if (!file.exists()) {
+        println("❌ Ошибка: Файл $filePath не найден.")
+        return
+    }
+
+    // Карта соответствий диапазонов столбцам
+    val columnMapping = mapOf(
+        "A1-A7" to 1, "B1-B7" to 2, "C1-C7" to 3, "D1-D7" to 4, "E1-E7" to 5, "F1-F7" to 6,
+        "A8-A14" to 7, "B8-B14" to 8, "C8-C14" to 9, "D8-D14" to 10, "E8-E14" to 11, "F8-F14" to 12,
+        "A15-A21" to 13, "B15-B21" to 14, "C15-C21" to 15, "D15-D21" to 16, "E15-E21" to 17, "F15-F21" to 18,
+        "A22-A28" to 19, "B22-B28" to 20, "C22-C28" to 21, "D22-D28" to 22, "E22-E28" to 23, "F22-F28" to 24,
+        "A29-A35" to 25, "B29-B35" to 26, "C29-C35" to 27, "D29-D35" to 28, "E29-E35" to 29, "F29-F35" to 30
+    )
+
+    // Определяем, в какую колонку писать
+    val columnIndex = columnMapping[range]
+    if (columnIndex == null) {
+        println("❌ Ошибка: Диапазон $range не найден в карте соответствий.")
+        return
+    }
+    println("✅ Диапазон $range -> Записываем в колонку $columnIndex")
+
+    WorkbookFactory.create(file).use { workbook ->
+        val sheet = workbook.getSheet("Состояние пользователя 3 блок") ?: workbook.createSheet("Состояние пользователя 3 блок")
+
+        // Поиск пользователя в первой строке (идём вправо)
+        val headerRow = sheet.getRow(0) ?: sheet.createRow(0)
+        var userColumnIndex = -1
+
+        for (col in 0 until 31) {  // Проверяем до 30 столбца
+            val cell = headerRow.getCell(col) ?: headerRow.createCell(col)
+            if (cell.cellType == CellType.NUMERIC && cell.numericCellValue.toLong() == chatId) {
+                userColumnIndex = col
+                break
+            } else if (cell.cellType == CellType.BLANK) {  // Если нашли пустой, записываем ID
+                cell.setCellValue(chatId.toDouble())
+                userColumnIndex = col
+                break
+            }
+        }
+
+        if (userColumnIndex == -1) {
+            println("⚠️ Нет свободного места для записи ID!")
+            return
+        }
+
+        // Получаем строку для записи балла (по индексу столбца)
+        val row = sheet.getRow(columnIndex) ?: sheet.createRow(columnIndex)
+        val cell = row.getCell(userColumnIndex) ?: row.createCell(userColumnIndex)
+
+        // Увеличиваем балл на 1
+        val currentScore = cell.numericCellValue.takeIf { it > 0 } ?: 0.0
+        cell.setCellValue(currentScore + 1)
+
+        println("✅ Прогресс обновлён: chatId=$chatId, столбец=$userColumnIndex, строка=$columnIndex, новый балл=${currentScore + 1}")
+
+        safelySaveWorkbook(workbook, filePath)
+    }
+}
+
+fun getCompletedRanges(chatId: Long, filePath: String): Set<String> {
+    println("📊 getCompletedRanges // Проверка пройденных мини-блоков")
+
+    val completedRanges = mutableSetOf<String>()
+    val file = File(filePath)
+    if (!file.exists()) {
+        println("❌ Ошибка: Файл $filePath не найден.")
+        return emptySet()
+    }
+
+    WorkbookFactory.create(file).use { workbook ->
+        val sheet = workbook.getSheet("Состояние пользователя 3 блок") ?: return emptySet()
+        val headerRow = sheet.getRow(0) ?: return emptySet()
+
+        var userColumnIndex: Int? = null
+        for (col in 0 until 31) {
+            val cell = headerRow.getCell(col)
+            if (cell != null && cell.cellType == CellType.NUMERIC && cell.numericCellValue.toLong() == chatId) {
+                userColumnIndex = col
+                break
+            }
+        }
+
+        if (userColumnIndex == null) {
+            println("⚠️ Пользователь $chatId не найден в таблице прогресса.")
+            return emptySet()
+        }
+
+        val rangeMapping = listOf(
+            "A1-A7", "B1-B7", "C1-C7", "D1-D7", "E1-E7", "F1-F7",
+            "A8-A14", "B8-B14", "C8-C14", "D8-D14", "E8-E14", "F8-F14",
+            "A15-A21", "B15-B21", "C15-C21", "D15-D21", "E15-E21", "F15-F21",
+            "A22-A28", "B22-B28", "C22-C28", "D22-D28", "E22-E28", "F22-F28",
+            "A29-A35", "B29-B35", "C29-C35", "D29-D35", "E29-E35", "F29-F35"
+        )
+
+        for ((index, range) in rangeMapping.withIndex()) {
+            val row = sheet.getRow(index + 1) ?: continue
+            val cell = row.getCell(userColumnIndex)
+            val value = cell?.numericCellValue ?: 0.0
+            if (value > 0) {
+                completedRanges.add(range)
+            }
+        }
+    }
+
+    println("✅ Завершенные диапазоны для пользователя $chatId: $completedRanges")
+    return completedRanges
+}
+
+fun checkBlocksBeforeTest(chatId: Long, bot: Bot, filePath: String) {
+    println("🚦 checkBlocksBeforeTest // Проверка выполнения блоков перед тестом")
+
+    // Загружаем состояние пользователя по блокам
+    initializeUserBlockStates(chatId, filePath)
+    val (block1Completed, block2Completed, block3Completed) = userBlockCompleted[chatId] ?: Triple(false, false, false)
+
+    println("📊 Состояние блоков для пользователя $chatId:")
+    println("✅ Блок 1: $block1Completed")
+    println("✅ Блок 2: $block2Completed")
+    println("✅ Блок 3: $block3Completed")
+
+    // Проверяем, пройдены ли все блоки
+    if (block1Completed && block2Completed && block3Completed) {
+        println("✅ Все блоки завершены. Запускаем тест.")
+        handleBlockTest(chatId, bot)
+    } else {
+        val notCompletedBlocks = mutableListOf<String>()
+        if (!block1Completed) notCompletedBlocks.add("Блок 1")
+        if (!block2Completed) notCompletedBlocks.add("Блок 2")
+        if (!block3Completed) notCompletedBlocks.add("Блок 3")
+
+        val messageText = "Вы не выполнили следующие блоки:\n" + notCompletedBlocks.joinToString("\n") +
+                "\nПройдите их перед тестом."
+
+        bot.sendMessage(
+            chatId = ChatId.fromId(chatId),
+            text = messageText,
+            replyMarkup = InlineKeyboardMarkup.createSingleRowKeyboard(
+                InlineKeyboardButton.CallbackData("Вернуться к блокам", "start_blocks")
+            )
+        )
+        println("⚠️ Отправлено сообщение о незавершенных блоках: $notCompletedBlocks")
+    }
+}
+
+fun checkUserStateBlock3(chatId: Long, filePath: String): Boolean {
+    println("🛠 Проверяем прогресс пользователя в блоке 3")
+
+    val file = File(filePath)
+    if (!file.exists()) {
+        println("❌ Файл не найден: $filePath")
+        return false
+    }
+
+    WorkbookFactory.create(file).use { workbook ->
+        val sheet = workbook.getSheet("Состояние пользователя 3 блок")
+        if (sheet == null) {
+            println("❌ Лист 'Состояние пользователя 3 блок' отсутствует.")
+            return false
+        }
+
+        val headerRow = sheet.getRow(0) ?: return false
+
+        // Находим колонку пользователя
+        var userColumnIndex: Int? = null
+        for (col in 0..30) {  // Проверяем ячейки от 2 по 31
+            val cell = headerRow.getCell(col)
+            if (cell != null && cell.cellType == CellType.NUMERIC && cell.numericCellValue.toLong() == chatId) {
+                userColumnIndex = col
+                break
+            }
+        }
+
+        if (userColumnIndex == null) {
+            println("⚠️ Пользователь $chatId не найден в таблице прогресса.")
+            return false
+        }
+
+        // Проверяем, есть ли баллы во ВСЕХ 30 мини-блоках
+        for (rowIdx in 1..30) { // Проверяем строки 2-31 (т.к. индексация с 0)
+            val row = sheet.getRow(rowIdx) ?: return false
+            val cell = row.getCell(userColumnIndex)
+            val value = cell?.numericCellValue ?: 0.0
+            if (value == 0.0) {
+                println("❌ Мини-блок $rowIdx не завершен")
+                return false
+            }
+        }
+
+        println("✅ Все 30 мини-блоков завершены!")
+        return true
+    }
+}
+
+fun initializeSheetColumnPairsFromFile(chatId: Long) {
+    println("### initializeSheetColumnPairsFromFile // Инициализация пар для пользователя $chatId")
+
+    sheetColumnPairs[chatId] = mutableMapOf()  // Создаем пустой мап для пользователя
+    val file = File(tableFile)
+    if (!file.exists()) {
+        println("❌ Файл $tableFile не найден!")
+        return
+    }
+
+    val workbook = WorkbookFactory.create(file)
+    val sheetNames = listOf("Существительные", "Глаголы", "Прилагательные")
+    val userPairs = mutableMapOf<String, String>()  // Временный мап для хранения пар
+
+    for (sheetName in sheetNames) {
+        val sheet = workbook.getSheet(sheetName)
+        if (sheet == null) {
+            println("⚠️ Лист $sheetName не найден!")
+            continue  // ✅ Просто continue, без run {}
+        }
+
+        val candidates = mutableListOf<Pair<String, String>>() // Кандидаты на выборку
+
+        for (i in 0..sheet.lastRowNum) {
+            val row = sheet.getRow(i) ?: continue
+            val key = row.getCell(0)?.toString()?.trim() ?: ""
+            val value = row.getCell(1)?.toString()?.trim() ?: ""
+            if (key.isNotEmpty() && value.isNotEmpty()) {
+                candidates.add(key to value)
+            }
+        }
+
+        if (candidates.size < 3) {
+            println("⚠️ Недостаточно данных в листе $sheetName для выбора 3 пар.")
+            continue
+        }
+
+        val selectedPairs = candidates.shuffled().take(3)  // Берем 3 случайные пары
+        for ((key, value) in selectedPairs) {
+            userPairs[key] = value
+        }
+    }
+
+    workbook.close()
+
+    if (userPairs.size == 9) {
+        sheetColumnPairs[chatId] = userPairs  // Сохраняем пары в общий мап
+        println("✅ Успешно загружены 9 пар для пользователя $chatId: $userPairs")
+    } else {
+        println("❌ Ошибка: Получено ${userPairs.size} пар вместо 9.")
+    }
+    generateReplacements(chatId)
 }
