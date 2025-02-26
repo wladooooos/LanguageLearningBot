@@ -49,7 +49,7 @@ var wordRus: String? = "ребенок"
 val userReplacements = mutableMapOf<Long, Map<Int, String>>() // Хранение замен для чисел (1-9) для каждого пользователя
 var sheetColumnPairs = mutableMapOf<Long, Map<String, String>>() // Глобальная переменная для хранения пар лист/столбец (ключ и значение — строки)
 
-val tableFile = "Алгоритм 3.7.xlsx"
+val tableFile = "Table.xlsx"
 
 fun main() {
     println("ЖЖЖ main // Основная функция запуска бота")
@@ -81,6 +81,20 @@ fun main() {
                 println("Ж6 Получен callback от пользователя: chatId = $chatId, data = $data")
 
                 when {
+                    data == "main_menu" -> {
+                        println("🔄 Возврат в начальное меню для chatId = $chatId")
+
+                        // Сбрасываем все состояния пользователя
+                        userStates.remove(chatId)
+                        userPadezh.remove(chatId)
+                        userWords.remove(chatId)
+                        userBlocks.remove(chatId)
+                        userBlockCompleted.remove(chatId)
+                        userColumnOrder.remove(chatId)
+
+                        // Отправляем стартовое меню
+                        sendStartMenu(chatId, bot)
+                    }
                     data.startsWith("Padezh:") -> {
                         val selectedPadezh = data.removePrefix("Padezh:")
                         println("Ж7 Выбранный падеж: chatId = $chatId, selectedPadezh = $selectedPadezh")
@@ -163,19 +177,79 @@ fun main() {
                                 handleBlock1(chatId, bot, tableFile, wordUz, wordRus)
                             }
                             "2" -> {
-                                userBlocks[chatId] = 2
-                                println("Пользователь $chatId выбрал блок 2")
-                                handleBlock2(chatId, bot, tableFile, wordUz, wordRus)
+                                initializeUserBlockStates(chatId, tableFile)
+                                val (block1Completed, _, _) = userBlockCompleted[chatId] ?: Triple(false, false, false)
+
+                                if (block1Completed) {
+                                    userBlocks[chatId] = 2
+                                    println("✅ Пользователь $chatId перешел во 2-й блок")
+                                    handleBlock2(chatId, bot, tableFile, wordUz, wordRus)
+                                } else {
+                                    val messageText = "Вы не завершили Блок 1.\nПройдите его перед переходом ко 2-му блоку."
+                                    bot.sendMessage(
+                                        chatId = ChatId.fromId(chatId),
+                                        text = messageText,
+                                        replyMarkup = InlineKeyboardMarkup.createSingleRowKeyboard(
+                                            InlineKeyboardButton.CallbackData("Вернуться к блокам", "main_menu")
+                                        )
+                                    )
+                                    println("⚠️ Пользователь $chatId не завершил Блок 1. Доступ к Блоку 2 закрыт.")
+                                }
                             }
+
                             "3" -> {
-                                userBlocks[chatId] = 3
-                                println("Пользователь $chatId выбрал блок 3")
-                                handleBlock3(chatId, bot, tableFile, wordUz, wordRus)
+                                initializeUserBlockStates(chatId, tableFile)
+                                val (block1Completed, block2Completed, _) = userBlockCompleted[chatId] ?: Triple(false, false, false)
+
+                                if (block1Completed && block2Completed) {
+                                    userBlocks[chatId] = 3
+                                    println("✅ Пользователь $chatId перешел в 3-й блок")
+                                    handleBlock3(chatId, bot, tableFile, wordUz, wordRus)
+                                } else {
+                                    val notCompletedBlocks = mutableListOf<String>()
+                                    if (!block1Completed) notCompletedBlocks.add("Блок 1")
+                                    if (!block2Completed) notCompletedBlocks.add("Блок 2")
+
+                                    val messageText = "Вы не завершили следующие блоки:\n" +
+                                            notCompletedBlocks.joinToString("\n") + "\nПройдите их перед переходом к 3-му блоку."
+
+                                    bot.sendMessage(
+                                        chatId = ChatId.fromId(chatId),
+                                        text = messageText,
+                                        replyMarkup = InlineKeyboardMarkup.createSingleRowKeyboard(
+                                            InlineKeyboardButton.CallbackData("Вернуться к блокам", "main_menu")
+                                        )
+                                    )
+                                    println("⚠️ Пользователь $chatId не завершил блоки: $notCompletedBlocks. Доступ к Блоку 3 закрыт.")
+                                }
                             }
+
                             "test" -> {
-                                userBlocks[chatId] = 4
-                                println("Пользователь $chatId выбрал тестовый блок")
-                                checkBlocksBeforeTest(chatId, bot, tableFile)
+                                initializeUserBlockStates(chatId, tableFile)
+                                val (block1Completed, block2Completed, block3Completed) = userBlockCompleted[chatId] ?: Triple(false, false, false)
+
+                                if (block1Completed && block2Completed && block3Completed) {
+                                    userBlocks[chatId] = 4
+                                    println("✅ Пользователь $chatId перешел в тестовый блок")
+                                    checkBlocksBeforeTest(chatId, bot, tableFile)
+                                } else {
+                                    val notCompletedBlocks = mutableListOf<String>()
+                                    if (!block1Completed) notCompletedBlocks.add("Блок 1")
+                                    if (!block2Completed) notCompletedBlocks.add("Блок 2")
+                                    if (!block3Completed) notCompletedBlocks.add("Блок 3")
+
+                                    val messageText = "Вы не завершили следующие блоки:\n" +
+                                            notCompletedBlocks.joinToString("\n") + "\nПройдите их перед тестом."
+
+                                    bot.sendMessage(
+                                        chatId = ChatId.fromId(chatId),
+                                        text = messageText,
+                                        replyMarkup = InlineKeyboardMarkup.createSingleRowKeyboard(
+                                            InlineKeyboardButton.CallbackData("Вернуться к блокам", "main_menu")
+                                        )
+                                    )
+                                    println("⚠️ Пользователь $chatId не завершил блоки: $notCompletedBlocks. Доступ к тесту закрыт.")
+                                }
                             }
                             "adjective1" -> {
                                 userBlocks[chatId] = 5
@@ -213,6 +287,22 @@ fun main() {
                         sendWordMessage(chatId, bot, tableFile)
                         println("Ж21111 Отправлена клавиатура для выбора слов: chatId = $chatId")
                     }
+                    data == "change_words_adjective1" -> {
+                        println("🔄 Перегенерация набора слов для прилагательных 1: chatId = $chatId")
+                        userReplacements.remove(chatId)
+                        sheetColumnPairs.remove(chatId)
+                        userStates.remove(chatId)
+                        initializeSheetColumnPairsFromFile(chatId)  // Генерация новых пар слов
+                        handleBlockAdjective1(chatId, bot) // Перезапуск блока 1
+                    }
+                    data == "change_words_adjective2" -> {
+                        println("🔄 Перегенерация набора слов для прилагательных 2: chatId = $chatId")
+                        userReplacements.remove(chatId)
+                        sheetColumnPairs.remove(chatId)
+                        userStates.remove(chatId)
+                        initializeSheetColumnPairsFromFile(chatId)  // Генерация новых пар слов
+                        handleBlockAdjective2(chatId, bot) // Перезапуск блока 2
+                    }
                     data == "change_Padezh" -> {
                         println("Ж21 Выбор нового падежа для пользователя: chatId = $chatId")
                         userPadezh.remove(chatId)
@@ -234,35 +324,46 @@ fun main() {
                         initializeUserBlockStates(chatId, tableFile)
                         val blockStates = userBlockCompleted[chatId] ?: Triple(false, false, false)
                         println("Ж25 Обработка 'Следующий блок': chatId = $chatId, currentBlock = $currentBlock")
+
                         userStates.remove(chatId)
                         userPadezh.remove(chatId)
                         userColumnOrder.remove(chatId)
 
-                        if ((currentBlock == 1 && blockStates.first) ||
-                            (currentBlock == 2 && blockStates.second) ||
-                            currentBlock == 3
-                        ) {
-                            if (currentBlock < 3) {
-                                userBlocks[chatId] = currentBlock + 1
-                                handleBlock(chatId, bot, tableFile, wordUz, wordRus)
-//                                println("Ж26 Переключение на следующий блок: chatId = $chatId, nextBlock = ${userBlocks[chatId]}")
-                                //initializeUserBlockStates(chatId, tableFile)
-//                                sendPadezhSelection(chatId, bot, tableFile)
-                            } else {
+                        when {
+                            currentBlock == 1 && blockStates.first -> {
+                                userBlocks[chatId] = 2
+                                handleBlock2(chatId, bot, tableFile, wordUz, wordRus)
+                            }
+                            currentBlock == 2 && blockStates.second -> {
+                                userBlocks[chatId] = 3
+                                handleBlock3(chatId, bot, tableFile, wordUz, wordRus)
+                            }
+                            currentBlock == 3 && blockStates.third -> {
+                                userBlocks[chatId] = 4
+                                checkBlocksBeforeTest(chatId, bot, tableFile)
+                            }
+                            else -> {
+                                val notCompletedBlocks = mutableListOf<String>()
+                                if (!blockStates.first) notCompletedBlocks.add("Блок 1")
+                                if (!blockStates.second) notCompletedBlocks.add("Блок 2")
+                                if (!blockStates.third) notCompletedBlocks.add("Блок 3")
+
+                                val messageText = "Вы не выполнили следующие блоки:\n" +
+                                        notCompletedBlocks.joinToString("\n") +
+                                        "\nПройдите их перед тестом."
+
                                 bot.sendMessage(
                                     chatId = ChatId.fromId(chatId),
-                                    text = "Вы уже на последнем блоке."
+                                    text = messageText,
+                                    replyMarkup = InlineKeyboardMarkup.createSingleRowKeyboard(
+                                        InlineKeyboardButton.CallbackData("Вернуться к блокам", "main_menu")
+                                    )
                                 )
-                                println("Ж27 Пользователь на последнем блоке: chatId = $chatId")
+                                println("⚠️ Отправлено сообщение о незавершенных блоках: $notCompletedBlocks")
                             }
-                        } else {
-                            bot.sendMessage(
-                                chatId = ChatId.fromId(chatId),
-                                text = "Пройдите все падежи текущего блока, чтобы открыть следующий."
-                            )
-                            println("Ж28 Блок $currentBlock не завершен: chatId = $chatId")
                         }
                     }
+
                     data == "prev_block" -> {
                         val currentBlock = userBlocks[chatId] ?: 1
                         println("Ж29 Обработка 'Предыдущий блок': chatId = $chatId, currentBlock = $currentBlock")
@@ -294,7 +395,49 @@ fun main() {
     bot.startPolling()
     println("Ж31 Бот начал опрос обновлений")
 }
+// Отправка приветственного сообщения
+fun sendWelcomeMessage(chatId: Long, bot: Bot) {
+    println("III sendWelcomeMessage // Отправка приветственного сообщения")
+    println("I1 Вход в функцию. Параметры: chatId=$chatId")
 
+    val keyboardMarkup = KeyboardReplyMarkup(
+        keyboard = generateUsersButton(),
+        resizeKeyboard = true
+    )
+    println("I2 Сформирована клавиатура для пользователя $chatId")
+
+    bot.sendMessage(
+        chatId = ChatId.fromId(chatId),
+        text = """Здравствуйте!
+Я бот, помогающий изучать узбекский язык!""",
+        replyMarkup = keyboardMarkup
+    )
+    println("I3 Сообщение отправлено пользователю $chatId")
+}
+// Отправка стартового меню с выбором блока
+fun sendStartMenu(chatId: Long, bot: Bot) {
+    println("jjj sendStartMenu // Отправка стартового меню с выбором блока")
+
+    val buttons = listOf(
+        listOf(InlineKeyboardButton.CallbackData("Блок 1", "block:1")),
+        listOf(InlineKeyboardButton.CallbackData("Блок 2", "block:2")),
+        listOf(InlineKeyboardButton.CallbackData("Блок 3", "block:3")),
+        listOf(InlineKeyboardButton.CallbackData("Тестовый блок", "block:test")),
+        listOf(InlineKeyboardButton.CallbackData("Прилагательные 1", "block:adjective1")),
+        listOf(InlineKeyboardButton.CallbackData("Прилагательные 2", "block:adjective2"))
+    )
+
+    bot.sendMessage(
+        chatId = ChatId.fromId(chatId),
+        text = "Выберите блок для работы:",
+        replyMarkup = InlineKeyboardMarkup.create(buttons)
+    )
+    println("jjj Стартовое меню отправлено пользователю: chatId=$chatId")
+}
+
+
+
+// Обработка основного блока для пользователя
 fun handleBlock(chatId: Long, bot: Bot, filePath: String, wordUz: String?, wordRus: String?) {
     println("AAA handleBlock // Обработка основного блока для пользователя")
     println("A1 Вход в функцию. Параметры: chatId=$chatId, filePath=$filePath, wordUz=$wordUz, wordRus=$wordRus")
@@ -342,6 +485,7 @@ fun handleBlock(chatId: Long, bot: Bot, filePath: String, wordUz: String?, wordR
     println("A13 Выход из функции handleBlock")
 }
 
+// Обработка блока 1
 fun handleBlock1(chatId: Long, bot: Bot, filePath: String, wordUz: String?, wordRus: String?) {
     println("BBB handleBlock1 // Обработка блока 1")
     if (userPadezh[chatId] == null) {
@@ -360,6 +504,7 @@ fun handleBlock1(chatId: Long, bot: Bot, filePath: String, wordUz: String?, word
     }
 }
 
+// Обработка блока 2
 fun handleBlock2(chatId: Long, bot: Bot, filePath: String, wordUz: String?, wordRus: String?) {
     println("CCC handleBlock2 // Обработка блока 2")
 
@@ -423,7 +568,7 @@ fun handleBlock2(chatId: Long, bot: Bot, filePath: String, wordUz: String?, word
     }
 }
 
-
+// Запуск блока 3 для пользователя
 fun handleBlock3(chatId: Long, bot: Bot, filePath: String, wordUz: String?, wordRus: String?) {
     println("🚀 handleBlock3 // Запуск блока 3 для пользователя $chatId")
 
@@ -505,7 +650,7 @@ fun handleBlock3(chatId: Long, bot: Bot, filePath: String, wordUz: String?, word
     }
 }
 
-
+// Обработка теста по существительным
 fun handleBlockTest(chatId: Long, bot: Bot) {
     println("TTT handleBlockTest // Обработка теста по существительным")
     println("T1 Вход в функцию. Параметры: chatId=$chatId")
@@ -520,6 +665,7 @@ fun handleBlockTest(chatId: Long, bot: Bot) {
     println("T2 Сообщение-заглушка отправлено пользователю $chatId")
 }
 
+// Переход к блоку с прилагательными
 fun handleBlockAdjective1(chatId: Long, bot: Bot) {
     println("UUU handleBlockAdjective1 // Переход к блоку с прилагательными")
     println("U1 Вход в функцию. Параметры: chatId=$chatId")
@@ -614,6 +760,7 @@ fun handleBlockAdjective1(chatId: Long, bot: Bot) {
 //    }
 }
 
+// Переход к блоку с прилагательными
 fun handleBlockAdjective2(chatId: Long, bot: Bot) {
     println("UUU2 handleBlockAdjective2 // Переход к блоку с прилагательными")
     println("U21 Вход в функцию. Параметры: chatId=$chatId")
@@ -695,6 +842,7 @@ fun handleBlockAdjective2(chatId: Long, bot: Bot) {
 //    }
 }
 
+// Генерация списка замен для пользователя
 fun generateReplacements(chatId: Long) {
     println("VVV generateReplacements // Генерация списка замен для пользователя $chatId")
 
@@ -721,9 +869,7 @@ fun generateReplacements(chatId: Long) {
     println("✅ Список замен обновлен для пользователя $chatId: $replacements")
 }
 
-
-
-
+// Генерация сообщения для блока прилагательных
 fun generateAdjectiveMessage(
     filePath: String,
     sheetName: String,
@@ -744,12 +890,14 @@ fun generateAdjectiveMessage(
     return processedText
 }
 
+// Отправка финального меню
 fun sendFinalButtonsForAdjectives(chatId: Long, bot: Bot) {
     println("XXX sendFinalButtonsForAdjectives // Отправка финального меню")
     println("X1 Вход в функцию. Параметры: chatId=$chatId")
 
-    val currentBlock = userBlocks[chatId] ?: 5  // Получаем текущий блок, по умолчанию 5
+    val currentBlock = userBlocks[chatId] ?: 5  // По умолчанию 5 (прилагательные 1)
     val repeatCallback = if (currentBlock == 5) "block:adjective1" else "block:adjective2"
+    val changeWordsCallback = if (currentBlock == 5) "change_words_adjective1" else "change_words_adjective2"
 
     val navigationButton = if (currentBlock == 5) {
         InlineKeyboardButton.CallbackData("Следующий блок", "block:adjective2")
@@ -759,8 +907,8 @@ fun sendFinalButtonsForAdjectives(chatId: Long, bot: Bot) {
 
     val buttons = listOf(
         listOf(InlineKeyboardButton.CallbackData("Повторить", repeatCallback)),
-        listOf(InlineKeyboardButton.CallbackData("Изменить набор слов", repeatCallback)),
-        listOf(InlineKeyboardButton.CallbackData("Назад к существительным", "back_to_nouns")),
+        listOf(InlineKeyboardButton.CallbackData("Изменить набор слов", changeWordsCallback)),
+        listOf(InlineKeyboardButton.CallbackData("Начальное меню", "main_menu")),
         listOf(navigationButton)
     )
 
@@ -772,8 +920,7 @@ fun sendFinalButtonsForAdjectives(chatId: Long, bot: Bot) {
     println("X2 Финальное меню отправлено пользователю: chatId=$chatId")
 }
 
-
-
+// Извлечение случайных слов из Excel
 fun extractRandomWords(filePath: String, sheetName: String, column: Int, count: Int): List<String> {
     println("YYY extractRandomWords // Извлечение случайных слов из Excel")
     println("Y1 Вход в функцию. Параметры: filePath=$filePath, sheetName=$sheetName, column=$column, count=$count")
@@ -799,7 +946,7 @@ fun extractRandomWords(filePath: String, sheetName: String, column: Int, count: 
     return words
 }
 
-
+// Формирование клавиатуры для выбора падежа
 fun sendPadezhSelection(chatId: Long, bot: Bot, filePath: String) {
     println("EEE sendPadezhSelection // Формирование клавиатуры для выбора падежа")
     println("E1 Вход в функцию. Параметры: chatId=$chatId, filePath=$filePath")
@@ -832,6 +979,7 @@ fun sendPadezhSelection(chatId: Long, bot: Bot, filePath: String) {
     println("E7 Сообщение с клавиатурой отправлено пользователю $chatId")
 }
 
+// Получение колонок текущего блока
 fun getPadezhColumnsForBlock(block: Int): Map<String, Int>? {
     println("FFF getPadezhColumnsForBlock // Получение колонок текущего блока")
     println("F1 Вход в функцию. Параметры: block=$block")
@@ -845,6 +993,7 @@ fun getPadezhColumnsForBlock(block: Int): Map<String, Int>? {
     return result
 }
 
+// Чтение баллов пользователя для блока
 fun getUserScoresForBlock(chatId: Long, filePath: String, PadezhColumns: Map<String, Int>): Map<String, Int> {
     println("GGG getUserScoresForBlock // Чтение баллов пользователя для блока")
     println("G1 Вход в функцию. Параметры: chatId=$chatId, filePath=$filePath, PadezhColumns=$PadezhColumns")
@@ -889,6 +1038,7 @@ fun getUserScoresForBlock(chatId: Long, filePath: String, PadezhColumns: Map<Str
     return scores
 }
 
+// Формирование кнопок выбора падежей
 fun generatePadezhSelectionButtons(
     currentBlock: Int,
     PadezhColumns: Map<String, Int>,
@@ -916,25 +1066,10 @@ fun generatePadezhSelectionButtons(
     return buttons
 }
 
-fun sendWelcomeMessage(chatId: Long, bot: Bot) {
-    println("III sendWelcomeMessage // Отправка приветственного сообщения")
-    println("I1 Вход в функцию. Параметры: chatId=$chatId")
 
-    val keyboardMarkup = KeyboardReplyMarkup(
-        keyboard = generateUsersButton(),
-        resizeKeyboard = true
-    )
-    println("I2 Сформирована клавиатура для пользователя $chatId")
 
-    bot.sendMessage(
-        chatId = ChatId.fromId(chatId),
-        text = """Здравствуйте!
-Я бот, помогающий изучать узбекский язык!""",
-        replyMarkup = keyboardMarkup
-    )
-    println("I3 Сообщение отправлено пользователю $chatId")
-}
 
+// Генерация кнопки /start
 fun generateUsersButton(): List<List<KeyboardButton>> {
     println("JJJ generateUsersButton // Генерация кнопки /start")
     println("J1 Вход в функцию.")
@@ -945,6 +1080,8 @@ fun generateUsersButton(): List<List<KeyboardButton>> {
     return result
 }
 
+
+// Отправка клавиатуры с выбором слов
 fun sendWordMessage(chatId: Long, bot: Bot, filePath: String) {
     println("KKK sendWordMessage // Отправка клавиатуры с выбором слов")
     println("K1 Вход в функцию. Параметры: chatId=$chatId, filePath=$filePath")
@@ -981,6 +1118,8 @@ fun sendWordMessage(chatId: Long, bot: Bot, filePath: String) {
     println("K8 Сообщение с клавиатурой отправлено пользователю $chatId")
 }
 
+
+// Создание клавиатуры из Excel-файла
 fun createWordSelectionKeyboardFromExcel(filePath: String, sheetName: String): InlineKeyboardMarkup {
     println("LLL createWordSelectionKeyboardFromExcel // Создание клавиатуры из Excel-файла")
     println("L1 Вход в функцию. Параметры: filePath=$filePath, sheetName=$sheetName")
@@ -1029,6 +1168,8 @@ fun createWordSelectionKeyboardFromExcel(filePath: String, sheetName: String): I
     return InlineKeyboardMarkup.create(buttons)
 }
 
+
+// Извлечение слов из callback data
 fun extractWordsFromCallback(data: String): Pair<String, String> {
     println("MMM extractWordsFromCallback // Извлечение слов из callback data")
     println("M1 Вход в функцию. Параметры: data=$data")
@@ -1041,6 +1182,8 @@ fun extractWordsFromCallback(data: String): Pair<String, String> {
     return wordUz to wordRus
 }
 
+
+// Отправка сообщения по текущему состоянию и падежу
 fun sendStateMessage(chatId: Long, bot: Bot, filePath: String, wordUz: String?, wordRus: String?) {
     println("NNN sendStateMessage // Отправка сообщения по текущему состоянию и падежу")
     println("N1 Вход в функцию. Параметры: chatId=$chatId, filePath=$filePath, wordUz=$wordUz, wordRus=$wordRus")
@@ -1052,6 +1195,8 @@ fun sendStateMessage(chatId: Long, bot: Bot, filePath: String, wordUz: String?, 
     println("N3 Завершение sendStateMessage")
 }
 
+
+// Проверка состояния пользователя
 fun validateUserState(chatId: Long, bot: Bot): Triple<String, List<String>, Int>? {
     println("OOO validateUserState // Проверка состояния пользователя")
     println("O1 Вход в функцию. Параметры: chatId=$chatId")
@@ -1077,7 +1222,7 @@ fun validateUserState(chatId: Long, bot: Bot): Triple<String, List<String>, Int>
     return Triple(selectedPadezh, rangesForPadezh, currentState)
 }
 
-
+// Обработка состояния и отправка сообщения
 fun processStateAndSendMessage(
     chatId: Long, bot: Bot, filePath: String, wordUz: String?, wordRus: String?,
     selectedPadezh: String, rangesForPadezh: List<String>, currentState: Int
@@ -1116,6 +1261,7 @@ fun processStateAndSendMessage(
     println("P7 Завершение processStateAndSendMessage")
 }
 
+// Отправка сообщения или переход к следующему шагу
 fun sendMessageOrNextStep(
     chatId: Long, bot: Bot, filePath: String, wordUz: String?, wordRus: String?,
     selectedPadezh: String, rangesForPadezh: List<String>, currentState: Int, messageText: String
@@ -1149,6 +1295,7 @@ fun sendMessageOrNextStep(
     }
 }
 
+// Отправка финального меню действий
 fun sendFinalButtons(chatId: Long, bot: Bot, wordUz: String?, wordRus: String?, filePath: String) {
     println("RRR sendFinalButtons // Отправка финального меню действий")
     println("R1 Вход в функцию. Параметры: chatId=$chatId, wordUz=$wordUz, wordRus=$wordRus")
@@ -1189,7 +1336,7 @@ fun sendFinalButtons(chatId: Long, bot: Bot, wordUz: String?, wordRus: String?, 
     println("R7 Финальное меню отправлено пользователю $chatId")
 }
 
-
+// Генерация сообщения из диапазона Excel
 fun generateMessageFromRange(filePath: String, sheetName: String, range: String, wordUz: String?, wordRus: String?): String {
     println("SSS generateMessageFromRange // Генерация сообщения из диапазона Excel")
     println("S1 Вход в функцию. Параметры: filePath=$filePath, sheetName=$sheetName, range=$range, wordUz=$wordUz, wordRus=$wordRus")
@@ -1222,6 +1369,7 @@ fun generateMessageFromRange(filePath: String, sheetName: String, range: String,
     return result
 }
 
+// Экранирование Markdown V2
 fun String.escapeMarkdownV2(): String {
     println("TTT escapeMarkdownV2 // Экранирование Markdown V2")
     println("T1 Вход в функцию. Строка: \"$this\"")
@@ -1248,8 +1396,7 @@ fun String.escapeMarkdownV2(): String {
     return escaped
 }
 
-
-
+// Обработка узбекского слова в контексте строки
 fun adjustWordUz(content: String, wordUz: String?): String {
     println("UUU adjustWordUz // Обработка узбекского слова в контексте строки")
     println("U1 Вход в функцию. Параметры: content=\"$content\", wordUz=\"$wordUz\"")
@@ -1283,6 +1430,7 @@ fun adjustWordUz(content: String, wordUz: String?): String {
     return result
 }
 
+// Извлечение и обработка ячеек из диапазона
 fun extractCellsFromRange(sheet: Sheet, range: String, wordUz: String?): List<String> {
     println("VVV extractCellsFromRange // Извлечение и обработка ячеек из диапазона")
     println("V1 Вход в функцию. Параметры: range=\"$range\", wordUz=\"$wordUz\"")
@@ -1310,6 +1458,7 @@ fun extractCellsFromRange(sheet: Sheet, range: String, wordUz: String?): List<St
     return cells
 }
 
+// Проверка состояния пользователя
 fun checkUserState(chatId: Long, filePath: String, sheetName: String = "Состояние пользователя"): Boolean {
     println("WWW checkUserState // Проверка состояния пользователя")
     println("W1 Вход в функцию. Параметры: chatId=$chatId, filePath=\"$filePath\", sheetName=\"$sheetName\"")
@@ -1370,6 +1519,7 @@ fun checkUserState(chatId: Long, filePath: String, sheetName: String = "Сост
     return allCompleted
 }
 
+// Сохранение данных в файл
 fun safelySaveWorkbook(workbook: org.apache.poi.ss.usermodel.Workbook, filePath: String) {
     println("XXX safelySaveWorkbook // Сохранение данных в файл")
     println("X1 Вход в функцию. Параметры: filePath=\"$filePath\"")
@@ -1397,9 +1547,7 @@ fun safelySaveWorkbook(workbook: org.apache.poi.ss.usermodel.Workbook, filePath:
     }
 }
 
-
-
-
+// Добавляет балл для падежа
 fun addScoreForPadezh(chatId: Long, Padezh: String, filePath: String, sheetName: String = "Состояние пользователя") {
     println("YYY addScoreForPadezh // Добавляет балл для падежа")
 
@@ -1452,7 +1600,7 @@ fun addScoreForPadezh(chatId: Long, Padezh: String, filePath: String, sheetName:
     }
 }
 
-
+// Проверка состояния пользователя
 fun checkUserState(chatId: Long, filePath: String, sheetName: String = "Состояние пользователя", block: Int = 1): Boolean {
     println("ZZZ checkUserState // Проверка состояния пользователя")
 
@@ -1508,8 +1656,7 @@ fun checkUserState(chatId: Long, filePath: String, sheetName: String = "Сост
     return false
 }
 
-
-
+// Начало добавления балла для пользователя
 fun addScoreForPadezh(chatId: Long, Padezh: String, filePath: String, block: Int) {
     println("aaa addScoreForPadezh // Начало добавления балла для пользователя")
 
@@ -1576,6 +1723,8 @@ fun addScoreForPadezh(chatId: Long, Padezh: String, filePath: String, block: Int
         }
     }
 }
+
+// Обработка содержимого ячейки
 fun processCellContent(cell: Cell?, wordUz: String?): String {
     println("bbb processCellContent // Обработка содержимого ячейки")
 
@@ -1604,6 +1753,7 @@ fun processCellContent(cell: Cell?, wordUz: String?): String {
     return result
 }
 
+// Обработка ячейки без форматированных участков
 fun processCellWithoutRuns(cell: Cell, text: String, wordUz: String?): String {
     println("ccc processCellWithoutRuns // Обработка ячейки без форматированных участков")
 
@@ -1625,6 +1775,7 @@ fun processCellWithoutRuns(cell: Cell, text: String, wordUz: String?): String {
     println("c6 Результат обработки текста: \"$result\"")
     return result
 }
+
 // Обработка форматированных участков текста
 fun processFormattedRuns(richText: XSSFRichTextString, text: String, wordUz: String?): String {
     println("ddd processFormattedRuns // Обработка форматированных участков текста")
@@ -1740,7 +1891,6 @@ fun initializeUserBlockStates(chatId: Long, filePath: String) {
     userBlockCompleted[chatId] = Triple(block1Completed, block2Completed, block3Completed)
 }
 
-
 // Новая функция: Обновление прогресса пользователя для мини-блоков
 fun updateUserProgressForMiniBlocks(chatId: Long, filePath: String, completedMiniBlocks: List<Int>) {
     println("iii updateUserProgressForMiniBlocks // Обновление прогресса пользователя по мини-блокам")
@@ -1790,26 +1940,7 @@ fun updateUserProgressForMiniBlocks(chatId: Long, filePath: String, completedMin
     }
 }
 
-fun sendStartMenu(chatId: Long, bot: Bot) {
-    println("jjj sendStartMenu // Отправка стартового меню с выбором блока")
-
-    val buttons = listOf(
-        listOf(InlineKeyboardButton.CallbackData("Блок 1", "block:1")),
-        listOf(InlineKeyboardButton.CallbackData("Блок 2", "block:2")),
-        listOf(InlineKeyboardButton.CallbackData("Блок 3", "block:3")),
-        listOf(InlineKeyboardButton.CallbackData("Тестовый блок", "block:test")),
-        listOf(InlineKeyboardButton.CallbackData("Прилагательные 1", "block:adjective1")),
-        listOf(InlineKeyboardButton.CallbackData("Прилагательные 2", "block:adjective2"))
-    )
-
-    bot.sendMessage(
-        chatId = ChatId.fromId(chatId),
-        text = "Выберите блок для работы:",
-        replyMarkup = InlineKeyboardMarkup.create(buttons)
-    )
-    println("jjj Стартовое меню отправлено пользователю: chatId=$chatId")
-}
-
+// Отправка сообщения с 9 парами слов из sheetColumnPairs
 fun sendReplacementsMessage(chatId: Long, bot: Bot) {
     println("### sendReplacementsMessage // Отправка сообщения с 9 парами слов из sheetColumnPairs")
 
@@ -1837,8 +1968,7 @@ fun sendReplacementsMessage(chatId: Long, bot: Bot) {
     println("✅ Сообщение отправлено пользователю $chatId:\n$messageText")
 }
 
-
-
+// Сохранение прогресса пользователя
 fun saveUserProgressBlok3(chatId: Long, filePath: String, range: String) {
     println("📌 saveUserProgressBlok3 // Сохранение прогресса пользователя")
 
@@ -1903,6 +2033,7 @@ fun saveUserProgressBlok3(chatId: Long, filePath: String, range: String) {
     }
 }
 
+// Проверка пройденных мини-блоков
 fun getCompletedRanges(chatId: Long, filePath: String): Set<String> {
     println("📊 getCompletedRanges // Проверка пройденных мини-блоков")
 
@@ -1953,6 +2084,7 @@ fun getCompletedRanges(chatId: Long, filePath: String): Set<String> {
     return completedRanges
 }
 
+// Проверка выполнения блоков перед тестом
 fun checkBlocksBeforeTest(chatId: Long, bot: Bot, filePath: String) {
     println("🚦 checkBlocksBeforeTest // Проверка выполнения блоков перед тестом")
 
@@ -1982,13 +2114,14 @@ fun checkBlocksBeforeTest(chatId: Long, bot: Bot, filePath: String) {
             chatId = ChatId.fromId(chatId),
             text = messageText,
             replyMarkup = InlineKeyboardMarkup.createSingleRowKeyboard(
-                InlineKeyboardButton.CallbackData("Вернуться к блокам", "start_blocks")
+                InlineKeyboardButton.CallbackData("Вернуться к блокам", "main_menu")
             )
         )
         println("⚠️ Отправлено сообщение о незавершенных блоках: $notCompletedBlocks")
     }
 }
 
+//Проверка прогресса пользователя в блоке 3
 fun checkUserStateBlock3(chatId: Long, filePath: String): Boolean {
     println("🛠 Проверяем прогресс пользователя в блоке 3")
 
@@ -2038,6 +2171,7 @@ fun checkUserStateBlock3(chatId: Long, filePath: String): Boolean {
     }
 }
 
+// Инициализация пар для пользователя
 fun initializeSheetColumnPairsFromFile(chatId: Long) {
     println("### initializeSheetColumnPairsFromFile // Инициализация пар для пользователя $chatId")
 
