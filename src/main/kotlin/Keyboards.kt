@@ -19,12 +19,15 @@ object Keyboards {
     // Стартовое меню для выбора блока
     fun startMenu(): InlineKeyboardMarkup {
         val buttons = listOf(
-            listOf(InlineKeyboardButton.CallbackData("Блок 1", "block:1")),
-            listOf(InlineKeyboardButton.CallbackData("Блок 2", "block:2")),
-            listOf(InlineKeyboardButton.CallbackData("Блок 3", "block:3")),
-            listOf(InlineKeyboardButton.CallbackData("Тестовый блок", "block:test")),
-            listOf(InlineKeyboardButton.CallbackData("Прилагательные 1", "block:adjective1")),
-            listOf(InlineKeyboardButton.CallbackData("Прилагательные 2", "block:adjective2"))
+            listOf(InlineKeyboardButton.CallbackData("Существительные 1", "nouns1")),
+            listOf(InlineKeyboardButton.CallbackData("Существительные 2", "nouns2")),
+            listOf(InlineKeyboardButton.CallbackData("Существительные 3", "nouns3")),
+            listOf(InlineKeyboardButton.CallbackData("Тест", "block:test")),
+            listOf(InlineKeyboardButton.CallbackData("Прилагательные 1", "adjective1")),
+            listOf(InlineKeyboardButton.CallbackData("Прилагательные 2", "adjective2")),
+            listOf(InlineKeyboardButton.CallbackData("Глаголы 1", "verbs1")),
+            listOf(InlineKeyboardButton.CallbackData("Глаголы 2", "verbs2")),
+            listOf(InlineKeyboardButton.CallbackData("Глаголы 3", "verbs3"))
         )
         return InlineKeyboardMarkup.create(buttons)
     }
@@ -101,6 +104,20 @@ object Keyboards {
     fun returnToBlocksButton(): InlineKeyboardMarkup {
         return InlineKeyboardMarkup.createSingleRowKeyboard(
             InlineKeyboardButton.CallbackData("Вернуться к блокам", "main_menu")
+        )
+    }
+
+    // Пример клавиатуры «Далее» специально для глаголов
+    fun nextVerbsButton(): InlineKeyboardMarkup {
+        return InlineKeyboardMarkup.createSingleRowKeyboard(
+            InlineKeyboardButton.CallbackData("Далее", "next_verbs1")
+        )
+    }
+
+    // Кнопка-заглушка в конце блока
+    fun finalVerbsButton(): InlineKeyboardMarkup {
+        return InlineKeyboardMarkup.createSingleRowKeyboard(
+            InlineKeyboardButton.CallbackData("В главное меню", "main_menu")
         )
     }
 }
