@@ -21,27 +21,60 @@ import kotlin.collections.map
 import kotlin.experimental.and
 
 object Nouns2 {
-    fun callNouns2(chatId: Long, bot: Bot) {
+    fun callNouns2(chatId: Long, bot: Bot, callbackQueryId: String) {
         println("Nouns2 callNouns2: Инициализация состояний для блока 2")
+        Globals.userStates.remove(chatId)
+        Globals.userPadezh.remove(chatId)
+        Globals.userBlocks[chatId] = 2
         initializeUserBlockStates(chatId, Config.TABLE_FILE)
         val (block1Completed, _, _) = Globals.userBlockCompleted[chatId] ?: Triple(false, false, false)
         if (block1Completed) {
             Globals.userBlocks[chatId] = 2
             handleBlock2(chatId, bot, Config.TABLE_FILE, Globals.userWordUz[chatId], Globals.userWordRus[chatId])
         } else {
-            val messageText = "Вы не завершили Блок 1.\nПройдите его перед переходом ко 2-му блоку."
-            GlobalScope.launch {
-                TelegramMessageService.updateOrSendMessage(
-                    chatId = chatId,
-                    text = messageText,
-                    replyMarkup = InlineKeyboardMarkup.createSingleRowKeyboard(
-                        InlineKeyboardButton.CallbackData("Вернуться к блокам", "main_menu")
-                    )
-                )
-            }
+            val messageText = "Вы не завершили блок \"Существительные\" 1.\nПройдите его перед переходом к блоку \"Существительные 2\"."
+            bot.answerCallbackQuery(
+                callbackQueryId = callbackQueryId,
+                text = messageText,
+                showAlert = true
+            )
         }
     }
+
     // Добавляем инициализацию состояний блоков
+
+//    fun handleBlock2(chatId: Long, bot: Bot, filePath: String, wordUz: String?, wordRus: String?) {
+//        println("Nouns2 handleBlock2 // Обработка блока 2")
+//        if (Globals.userPadezh[chatId] == null) {
+//            sendPadezhSelection(chatId, bot, filePath)
+//            return
+//        }
+//        if (wordUz.isNullOrBlank() || wordRus.isNullOrBlank()) {
+//            sendWordMessage(chatId, bot, filePath)
+//            return
+//        }
+//        val blockRanges = Config.PADEZH_RANGES[Globals.userPadezh[chatId]] ?: return
+//        if (Globals.userColumnOrder[chatId].isNullOrEmpty()) {
+//            Globals.userColumnOrder[chatId] = blockRanges.shuffled().toMutableList()
+//        }
+//        val currentState = Globals.userStates[chatId] ?: 0
+//        val shuffledColumns = Globals.userColumnOrder[chatId]!!
+//        if (currentState >= shuffledColumns.size) {
+//            addScoreForPadezh(chatId, Globals.userPadezh[chatId].toString(), filePath, block = 2)
+//            sendFinalButtons(chatId, bot, wordUz, wordRus, filePath)
+//            return
+//        }
+//        val range = shuffledColumns[currentState]
+//        val messageText = generateMessageFromRange(filePath, "Существительные 2", range, wordUz, wordRus, showHint = false)
+//        GlobalScope.launch {
+//            TelegramMessageService.updateOrSendMessage(
+//                chatId = chatId,
+//                text = messageText,
+//                replyMarkup = Keyboards.nextButtonWithHintToggle(wordUz, wordRus, isHintVisible = false)
+//            )
+//        }
+//    }
+
     fun handleBlock2(chatId: Long, bot: Bot, filePath: String, wordUz: String?, wordRus: String?) {
         println("Nouns2 handleBlock2 // Обработка блока 2")
         // Если не выбран падеж — отправляем меню выбора
@@ -180,7 +213,7 @@ object Nouns2 {
             val score = userScores[PadezhName] ?: 0
             InlineKeyboardButton.CallbackData("$PadezhName [$score]", "Padezh:$PadezhName")
         }.map { listOf(it) }.toMutableList()
-        buttons.add(listOf(InlineKeyboardButton.CallbackData("Меню", "main_menu")))
+        //buttons.add(listOf(InlineKeyboardButton.CallbackData("Меню", "main_menu")))
 //        if (currentBlock > 1) {
 //            buttons.add(listOf(InlineKeyboardButton.CallbackData("⬅️ Предыдущий блок", "prev_block")))
 //        }
@@ -265,27 +298,57 @@ object Nouns2 {
     }
 
     // Генерация сообщения из диапазона Excel
-    fun generateMessageFromRange(filePath: String, sheetName: String, range: String, wordUz: String?, wordRus: String?): String {
+    fun generateMessageFromRange(
+        filePath: String,
+        sheetName: String,
+        range: String,
+        wordUz: String?,
+        wordRus: String?,
+        showHint: Boolean = false
+    ): String {
         println("Nouns2 generateMessageFromRange // Генерация сообщения из диапазона Excel")
         val file = File(filePath)
-        if (!file.exists()) {
-            throw IllegalArgumentException("Файл $filePath не найден")
-        }
-
+        if (!file.exists()) throw IllegalArgumentException("Файл $filePath не найден")
         val excelManager = ExcelManager(filePath)
-        val result = excelManager.useWorkbook { workbook ->
+        // Получаем исходный текст (с spoiler-маркерами "||")
+        val rawText = excelManager.useWorkbook { workbook ->
             val sheet = workbook.getSheet(sheetName)
-            if (sheet == null) {
-                throw IllegalArgumentException("Лист $sheetName не найден")
-            }
+                ?: throw IllegalArgumentException("Лист $sheetName не найден")
             val cells = extractCellsFromRange(sheet, range, wordUz)
             val firstCell = cells.firstOrNull() ?: ""
             val messageBody = cells.drop(1).joinToString("\n")
-            val res = listOf(firstCell, messageBody).filter { it.isNotBlank() }.joinToString("\n\n")
-            res
+            listOf(firstCell, messageBody).filter { it.isNotBlank() }.joinToString("\n\n")
         }
-        return result
+        return if (showHint) {
+            // При показанной подсказке – удаляем маркеры "||"
+            rawText.replace("||", "")
+        } else {
+            // При скрытой подсказке – заменяем каждый блок вида "||...||" (с учетом переводов строк) на "*"
+            rawText.replace(Regex("\\|\\|.*?\\|\\|", RegexOption.DOT_MATCHES_ALL), "*")
+        }
     }
+
+//    fun generateMessageFromRange(filePath: String, sheetName: String, range: String, wordUz: String?, wordRus: String?): String {
+//        println("Nouns2 generateMessageFromRange // Генерация сообщения из диапазона Excel")
+//        val file = File(filePath)
+//        if (!file.exists()) {
+//            throw IllegalArgumentException("Файл $filePath не найден")
+//        }
+//
+//        val excelManager = ExcelManager(filePath)
+//        val result = excelManager.useWorkbook { workbook ->
+//            val sheet = workbook.getSheet(sheetName)
+//            if (sheet == null) {
+//                throw IllegalArgumentException("Лист $sheetName не найден")
+//            }
+//            val cells = extractCellsFromRange(sheet, range, wordUz)
+//            val firstCell = cells.firstOrNull() ?: ""
+//            val messageBody = cells.drop(1).joinToString("\n")
+//            val res = listOf(firstCell, messageBody).filter { it.isNotBlank() }.joinToString("\n\n")
+//            res
+//        }
+//        return result
+//    }
 
     // Экранирование Markdown V2
     fun String.escapeMarkdownV2(): String {

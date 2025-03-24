@@ -60,7 +60,7 @@ object Keyboards {
         val buttons = listOf(
             listOf(InlineKeyboardButton.CallbackData("Повторить", repeatCallback)),
             listOf(InlineKeyboardButton.CallbackData("Изменить набор слов", changeWordsCallback)),
-            listOf(InlineKeyboardButton.CallbackData("Начальное меню", "main_menu")),
+            //listOf(InlineKeyboardButton.CallbackData("Начальное меню", "main_menu")),
             listOf(navigationButton)
         )
         return InlineKeyboardMarkup.create(buttons)
@@ -88,10 +88,15 @@ object Keyboards {
 
     // Клавиатура с одной кнопкой "Далее"
     fun nextButton(wordUz: String?, wordRus: String?): InlineKeyboardMarkup {
-        return InlineKeyboardMarkup.createSingleRowKeyboard(
-            InlineKeyboardButton.CallbackData("Далее", "next:$wordUz:$wordRus")
+        val buttons = listOf(
+            listOf(InlineKeyboardButton.CallbackData("Выбранное слово: $wordRus - $wordUz", "nouns1Change_word_random")),
+            //listOf(InlineKeyboardButton.CallbackData("Меню", "main_menu")),
+            listOf(InlineKeyboardButton.CallbackData("Далее", "next:$wordUz:$wordRus"))
         )
+        return InlineKeyboardMarkup.create(buttons)
     }
+
+
 
     // Клавиатура для перехода к блоку прилагательных (например, из теста)
     fun goToAdjectivesButton(): InlineKeyboardMarkup {
@@ -120,4 +125,65 @@ object Keyboards {
             InlineKeyboardButton.CallbackData("В главное меню", "main_menu")
         )
     }
+
+    fun nextButtonWithHintToggle(wordUz: String?, wordRus: String?, isHintVisible: Boolean, blockId: String): InlineKeyboardMarkup {
+        val baseButtons = listOf(
+            listOf(InlineKeyboardButton.CallbackData("Выбранное слово: $wordRus - $wordUz", "nouns1Change_word_random")),
+            //listOf(InlineKeyboardButton.CallbackData("Меню", "main_menu")),
+            listOf(InlineKeyboardButton.CallbackData("Далее", "next:$wordUz:$wordRus"))
+        )
+        val toggleText = if (isHintVisible) "Скрыть подсказку" else "Показать подсказку"
+        // Формат callback: toggleHint:{текущее_состояние}:{blockId}:{wordUz}:{wordRus}
+        val toggleCallback = "toggleHint:${isHintVisible}:$blockId:$wordUz:$wordRus"
+        val toggleButtonRow = listOf(InlineKeyboardButton.CallbackData(toggleText, toggleCallback))
+        return InlineKeyboardMarkup.create(baseButtons + listOf(toggleButtonRow))
+    }
+
+    fun nextPadezhButton(nextPadezh: String): InlineKeyboardMarkup {
+        val button = InlineKeyboardButton.CallbackData("Выбрать падеж", "nouns1")
+        return InlineKeyboardMarkup.createSingleRowKeyboard(button)
+    }
+
+    fun nextCaseButtonWithHintToggle(
+        wordUz: String?,
+        wordRus: String?,
+        isHintVisible: Boolean,
+        blockId: String,
+        nextPadezh: String
+    ): InlineKeyboardMarkup {
+        val selectedWordRow = listOf(
+            InlineKeyboardButton.CallbackData("Выбранное слово: $wordRus - $wordUz", "nouns1Change_word_random")
+        )
+        val nextCaseRow = listOf(
+            InlineKeyboardButton.CallbackData("Выбрать падеж", "nouns1")
+        )
+        val toggleText = if (isHintVisible) "Скрыть подсказку" else "Показать подсказку"
+        val toggleCallback = "toggleHint:${isHintVisible}:$blockId:$wordUz:$wordRus"
+        val toggleButtonRow = listOf(InlineKeyboardButton.CallbackData(toggleText, toggleCallback))
+        return InlineKeyboardMarkup.create(listOf(selectedWordRow, nextCaseRow, toggleButtonRow))
+    }
+
+//    fun transitionToNouns2ButtonWithHintToggle(
+//        wordUz: String?,
+//        wordRus: String?,
+//        isHintVisible: Boolean,
+//        blockId: String
+//    ): InlineKeyboardMarkup {
+//        val selectedWordRow = listOf(
+//            InlineKeyboardButton.CallbackData("Выбранное слово: $wordRus - $wordUz", "nouns1Change_word_random")
+//        )
+//        val transitionRow = listOf(
+//            InlineKeyboardButton.CallbackData("Перейти к Существительные 2", "nouns2")
+//        )
+//        val toggleText = if (isHintVisible) "Скрыть подсказку" else "Показать подсказку"
+//        val toggleCallback = "toggleHint:${isHintVisible}:$blockId:$wordUz:$wordRus"
+//        val toggleButtonRow = listOf(InlineKeyboardButton.CallbackData(toggleText, toggleCallback))
+//        return InlineKeyboardMarkup.create(listOf(selectedWordRow, transitionRow, toggleButtonRow))
+//    }
+//
+//    fun caseSelectionButton(): InlineKeyboardMarkup {
+//        return InlineKeyboardMarkup.createSingleRowKeyboard(
+//            InlineKeyboardButton.CallbackData("Выбор подежа", "nouns1")
+//        )
+//    }
 }

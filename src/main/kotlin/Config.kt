@@ -9,6 +9,9 @@ object Config {
     //const val TABLE_FILE: String = "/home/ec2-user/Table.xlsx"
     const val TABLE_FILE: String = "Table.xlsx"
 
+    //const val GVERBS_FILE = "/home/ec2-user/Глаголы.xlsx"
+    const val GVERBS_FILE = "Глаголы.xlsx"
+
     // Диапазоны для падежей (используются для формирования сообщений)
     val PADEZH_RANGES: Map<String, List<String>> = mapOf(
         "Именительный" to listOf("A1-A7", "B1-B7", "C1-C7", "D1-D7", "E1-E7"),
@@ -83,9 +86,6 @@ object Config {
         "A22-A28" to 19, "B22-B28" to 20, "C22-C28" to 21, "D22-D28" to 22, "E22-E28" to 23, "F22-F28" to 24,
         "A29-A35" to 25, "B29-B35" to 26, "C29-C35" to 27, "D29-D35" to 28, "E29-E35" to 29, "F29-F35" to 30
     )
-
-    //const val GVERBS_FILE = "/home/ec2-user/Глаголы.xlsx"
-    const val GVERBS_FILE = "Глаголы.xlsx"
 
     val GVERBS_RANGES_3 = listOf(
         "A1-A5", "B1-B5", "C1-C5", "D1-D5", "E1-E5", "F1-F5",

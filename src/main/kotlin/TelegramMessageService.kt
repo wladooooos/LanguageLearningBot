@@ -1,6 +1,7 @@
 import com.github.kotlintelegrambot.Bot
 import com.github.kotlintelegrambot.config.Config
 import com.github.kotlintelegrambot.entities.InlineKeyboardMarkup
+import com.github.kotlintelegrambot.entities.ParseMode
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.*
 import org.json.JSONObject
@@ -19,19 +20,34 @@ object TelegramMessageService {
         chatId: Long,
         messageId: Long,
         text: String,
-        replyMarkupJson: String? = null
+        replyMarkupJson: String? = null,
+        parseMode: String? = null // добавили параметр
     ): String = suspendCancellableCoroutine { cont ->
         val botToken = Config.BOT_TOKEN
         val url = "https://api.telegram.org/bot$botToken/editMessageText"
+        println("editMessageTextViaHttpSuspend: наличие parse_mode: ${parseMode}")
         // Формирование тела запроса в формате form-data
         val formBodyBuilder = FormBody.Builder()
             .add("chat_id", chatId.toString())
             .add("message_id", messageId.toString())
             .add("text", text)
+            .add("parse_mode", "MarkdownV2")
         if (replyMarkupJson != null) {
             formBodyBuilder.add("reply_markup", replyMarkupJson)
         }
+        if (parseMode != null) {
+            formBodyBuilder.add("parse_mode", "MarkdownV2")
+        }
         val requestBody = formBodyBuilder.build()
+
+
+// Логируем все параметры из requestBody (если он является FormBody)
+        if (requestBody is FormBody) {
+            println("TelegramMessageService editMessageTextViaHttpSuspend: Параметры запроса:")
+            for (i in 0 until requestBody.size) {
+                println("TelegramMessageService editMessageTextViaHttpSuspend: ${requestBody.name(i)} = ${requestBody.value(i)}")
+            }
+        }
 
         val request = Request.Builder()
             .url(url)
@@ -54,14 +70,16 @@ object TelegramMessageService {
                     if (cont.isActive) cont.resumeWithException(ex)
                 }
             }
-        })
+        }
+        )
     }
 
     // suspend-функция для отправки нового сообщения через Telegram API с использованием OkHttp
     suspend fun sendMessageViaHttpSuspend(
         chatId: Long,
         text: String,
-        replyMarkupJson: String? = null
+        replyMarkupJson: String? = null,
+        parseMode: String? = null
     ): String = suspendCancellableCoroutine { cont ->
         val botToken = Config.BOT_TOKEN
         val url = "https://api.telegram.org/bot$botToken/sendMessage"
@@ -70,6 +88,9 @@ object TelegramMessageService {
             .add("text", text)
         if (replyMarkupJson != null) {
             formBodyBuilder.add("reply_markup", replyMarkupJson)
+        }
+        if (parseMode != null) {
+            formBodyBuilder.add("parse_mode", "MarkdownV2")
         }
         val requestBody = formBodyBuilder.build()
 
@@ -102,7 +123,8 @@ object TelegramMessageService {
     suspend fun updateOrSendMessage(
         chatId: Long,
         text: String,
-        replyMarkup: InlineKeyboardMarkup? = null
+        replyMarkup: InlineKeyboardMarkup? = null,
+        parseMode: String? = null // опциональный параметр, например, "MarkdownV2"
     ) {
         println("updateOrSendMessage: Вызывается для chatId=$chatId с текстом: $text")
         // Предполагаем, что replyMarkup.toString() выдаёт корректный JSON
@@ -111,7 +133,8 @@ object TelegramMessageService {
         if (currentMessageId != null) {
             println("updateOrSendMessage: Найден сохранённый message_id = $currentMessageId")
             try {
-                val response = editMessageTextViaHttpSuspend(chatId, currentMessageId.toLong(), text, replyMarkupJson)
+                // Передаём parseMode в запрос редактирования
+                val response = editMessageTextViaHttpSuspend(chatId, currentMessageId.toLong(), text, replyMarkupJson, parseMode)
                 println("updateOrSendMessage: Редактирование прошло, ответ: $response")
                 val json = JSONObject(response)
                 if (!json.getBoolean("ok")) {
@@ -127,8 +150,8 @@ object TelegramMessageService {
         } else {
             println("updateOrSendMessage: Сохранённого message_id не найдено, отправляем новое сообщение.")
         }
-        // Отправляем новое сообщение через HTTP
-        val newResponse = sendMessageViaHttpSuspend(chatId, text, replyMarkupJson)
+        // Передаём parseMode в запрос нового сообщения
+        val newResponse = sendMessageViaHttpSuspend(chatId, text, replyMarkupJson, parseMode)
         println("updateOrSendMessage: Ответ нового сообщения: $newResponse")
         val newJson = JSONObject(newResponse)
         if (!newJson.getBoolean("ok")) {
@@ -138,5 +161,4 @@ object TelegramMessageService {
         Globals.userMainMessageId[chatId] = newMessageId
         println("updateOrSendMessage: Новое сообщение отправлено, сохранён message_id = $newMessageId")
     }
-
 }

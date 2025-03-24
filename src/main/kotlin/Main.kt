@@ -14,6 +14,7 @@ import com.github.kotlintelegrambot.dispatcher.messageIdList.editMessageTextViaH
 import com.github.kotlintelegrambot.dispatcher.sendStartMenu
 import com.github.kotlintelegrambot.dispatcher.sendWelcomeMessage
 import com.github.kotlintelegrambot.entities.KeyboardReplyMarkup
+import com.github.kotlintelegrambot.entities.keyboard.KeyboardButton
 import com.github.kotlintelegrambot.keyboards.Keyboards
 import jdk.internal.joptsimple.internal.Messages.message
 import org.apache.poi.ss.usermodel.CellType
@@ -30,6 +31,19 @@ fun main() {
             command("start") {
                 commandStart(message.chat.id, bot)
             }
+            text {
+                if (message.text?.trim() == "В главное меню") {
+                    // Удаляем сообщение пользователя (бот должен иметь на это права)
+                    bot.deleteMessage(
+                        chatId = ChatId.fromId(message.chat.id),
+                        messageId = message.messageId
+                    )
+                    // Отправляем только главное меню без приветственного сообщения
+                    sendStartMenu(message.chat.id, bot)
+                }
+            }
+
+
             callbackQuery {
                 println("main callbackQuery 16. Вход в обработчик callback-запросов")
                 val chatId = callbackQuery.message?.chat?.id
@@ -49,7 +63,8 @@ fun main() {
                     data.startsWith("next_adjective:") -> callNextAdjective(chatId, bot)
                     data == "nouns1" -> Nouns1.callNouns1(chatId, bot)
                     data.startsWith("nouns1Padezh:") -> Nouns1.callPadezh(chatId, bot, data, callbackQuery.id)
-                    data == "nouns2" -> Nouns2.callNouns2(chatId, bot)
+                    data == "nouns1Change_word_random" -> Nouns1.callRandomWord(chatId, bot)
+                    data == "nouns2" -> Nouns2.callNouns2(chatId, bot, callbackQuery.id)
                     data == "nouns3" -> Nouns3.callNouns3(chatId, bot)
                     data == "test" -> TestBlock.callTestBlock(chatId, bot)
                     data == "adjective1" -> Adjectives1.callAdjective1(chatId, bot)
@@ -67,6 +82,43 @@ fun main() {
                     data == "next_verbs1" -> callNextVerbs1(chatId, bot)
                     data == "next_verbs2" -> callNextVerbs2(chatId, bot)
                     data == "next_verbs3" -> callNextVerbs3(chatId, bot)
+
+                    data.startsWith("toggleHint:") -> {
+                        val parts = data.split(":")
+                        // Ожидаемый формат: toggleHint:{currentHintVisible}:{blockId}:{wordUz}:{wordRus}
+                        if (parts.size >= 5) {
+                            val currentHintVisible = parts[1].toBoolean()
+                            val blockId = parts[2] // "nouns1", "nouns2", или "nouns3"
+                            val wordUz = parts[3]
+                            val wordRus = parts[4]
+                            val newHintVisible = !currentHintVisible
+                            val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
+                            val filePath = Config.TABLE_FILE
+                            // Получаем сохранённые для данного пользователя лист и диапазон
+                            val sheetName = Globals.currentSheetName[chatId]
+                                ?: throw IllegalStateException("Нет текущего листа для chatId=$chatId")
+                            val range = Globals.currentRange[chatId]
+                                ?: throw IllegalStateException("Нет текущего диапазона для chatId=$chatId")
+                            // Генерируем новое сообщение с обновлённой настройкой подсказки
+                            val newMessageText = when(blockId) {
+                                "nouns1" -> Nouns1.generateMessageFromRange(filePath, sheetName, range, wordUz, wordRus, newHintVisible)
+                                "nouns2" -> Nouns2.generateMessageFromRange(filePath, sheetName, range, wordUz, wordRus, newHintVisible)
+                                "nouns3" -> Nouns3.generateMessageFromRange(filePath, sheetName, range, wordUz, wordRus, newHintVisible)
+                                else -> throw IllegalArgumentException("Неизвестный blockId: $blockId")
+                            }
+                            // Определяем, является ли текущее сообщение последним в выбранном падеже.
+                            val state = Nouns1.validateUserState(chatId, bot)
+                            val newKeyboard = if (state != null && state.third == state.second.size - 1) {
+                                // Если это последнее сообщение, заменяем кнопку "Далее" на "Следующий падеж"
+                                Keyboards.nextCaseButtonWithHintToggle(wordUz, wordRus, newHintVisible, blockId, Nouns1.getNextPadezh(state.first))
+                            } else {
+                                // Иначе используем стандартную клавиатуру с кнопкой "Далее"
+                                Keyboards.nextButtonWithHintToggle(wordUz, wordRus, newHintVisible, blockId)
+                            }
+                            TelegramMessageService.updateOrSendMessage(chatId, newMessageText, newKeyboard)
+                        }
+                    }
+
                 }
             }
         }
@@ -83,7 +135,7 @@ fun commandStart(chatId: Long, bot: Bot) {
     Globals.userColumnOrder.remove(chatId)
     Globals.userWordUz[chatId] = "bola"
     Globals.userWordRus[chatId] = "ребенок"
-    //sendWelcomeMessage(chatId, bot)
+    sendWelcomeMessage(chatId, bot)
     sendStartMenu(chatId, bot)
 }
 
@@ -259,14 +311,18 @@ fun sendWelcomeMessage(chatId: Long, bot: Bot) {
         keyboard = Keyboards.getStartButton().keyboard,
         resizeKeyboard = true
     )
-    GlobalScope.launch {
-        TelegramMessageService.updateOrSendMessage(
-            chatId = chatId,
-            text = """Здравствуйте!
+    bot.sendMessage(
+        chatId = ChatId.fromId(chatId),
+        text = """Здравствуйте!
 Я бот, помогающий изучать узбекский язык!""",
-            replyMarkup = null // Здесь можно не передавать клавиатуру, если это просто приветствие
+        replyMarkup = KeyboardReplyMarkup(
+            keyboard = listOf(
+                listOf(KeyboardButton("В главное меню"))
+            ),
+            resizeKeyboard = true
         )
-    }
+    )
+
 }
 
 fun sendStartMenu(chatId: Long, bot: Bot) {
@@ -476,6 +532,7 @@ fun addScoreForPadezh(chatId: Long, Padezh: String, filePath: String, block: Int
     )
     val column = columnRanges[block]?.get(Padezh) ?: return
     val excelManager = ExcelManager(filePath)
+    excelManager.ensureUserRecord(chatId, filePath)
     excelManager.useWorkbook { workbook ->
         val sheet = workbook.getSheet("Состояние пользователя")
             ?: throw IllegalArgumentException("A3 Ошибка: Лист 'Состояние пользователя' не найден")

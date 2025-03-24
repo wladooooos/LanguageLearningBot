@@ -11,4 +11,7 @@ object Globals {
     var sheetColumnPairs = mutableMapOf<Long, Map<String, String>>() // Глобальная переменная для хранения пар лист/столбец (ключ и значение — строки)
     val userRandomVerb = mutableMapOf<Long, String>()
     val userMainMessageId = mutableMapOf<Long, Int>()
+    // Добавляем переменные для хранения текущего листа и диапазона для редактирования сообщения с подсказкой:
+    val currentSheetName = mutableMapOf<Long, String>()
+    val currentRange = mutableMapOf<Long, String>()
 }

@@ -56,10 +56,9 @@ object Nouns3 {
             return
         }
 
-        // Используем неизменяемый список диапазонов из Config
+        // Используем список диапазонов для блока 3 из Config
         val allRanges = Config.ALL_RANGES_BLOCK_3
 
-        // Если у пользователя еще нет порядка столбцов — перемешиваем
         if (Globals.userColumnOrder[chatId].isNullOrEmpty()) {
             Globals.userColumnOrder[chatId] = allRanges.shuffled().toMutableList()
             println("🔀 Перемешали мини-блоки для пользователя $chatId: ${Globals.userColumnOrder[chatId]}")
@@ -69,11 +68,11 @@ object Nouns3 {
         val currentState = Globals.userStates[chatId] ?: 0
         println("📌 Текущее состояние пользователя: $currentState")
 
-        // Загружаем баллы пользователя
+        // Получаем список уже пройденных диапазонов
         val completedRanges = getCompletedRanges(chatId, filePath)
         println("✅ Пройденные мини-блоки: $completedRanges")
 
-        // Ищем первый неповторяющийся диапазон
+        // Ищем первый не пройденный диапазон
         var currentRange: String? = null
         for (range in shuffledRanges) {
             if (!completedRanges.contains(range)) {
@@ -81,37 +80,39 @@ object Nouns3 {
                 break
             }
         }
-
-        // Если ВСЕ 30 диапазонов пройдены, то берем текущий диапазон из списка
         if (currentRange == null) {
-            println("⚠️ ВСЕ 30 мини-блоков уже пройдены! Берем текущий из списка.")
+            println("⚠️ Все мини-блоки пройдены, берём текущий диапазон")
             currentRange = shuffledRanges[currentState % shuffledRanges.size]
         }
-
         println("🎯 Выбран диапазон: $currentRange")
 
+        // Сохраняем в Globals для данного chatId имя листа и выбранный диапазон для последующего редактирования
+        Globals.currentSheetName[chatId] = "Существительные 3"
+        Globals.currentRange[chatId] = currentRange!!
+
+        // Генерируем текст сообщения с подсказкой скрытой (showHint = false)
         val messageText = try {
-            generateMessageFromRange(filePath, "Существительные 3", currentRange!!, wordUz, wordRus)
+            generateMessageFromRange(filePath, "Существительные 3", currentRange, wordUz, wordRus, showHint = false)
         } catch (e: Exception) {
             bot.sendMessage(chatId = ChatId.fromId(chatId), text = "Ошибка при формировании сообщения.")
             println("❌ Ошибка при генерации сообщения: ${e.message}")
             return
         }
 
-        val isLastRange = currentState == 5 // 6 сообщений всего
+        val isLastRange = currentState == 5 // Если 6 сообщений всего
         println("📩 Отправка сообщения: \"$messageText\"")
 
         GlobalScope.launch {
             TelegramMessageService.updateOrSendMessage(
                 chatId = chatId,
                 text = messageText,
-                //parseMode = ParseMode.MARKDOWN_V2,
-                replyMarkup = if (isLastRange) null else Keyboards.nextButton(wordUz, wordRus)
+                replyMarkup = if (isLastRange) null
+                else Keyboards.nextButtonWithHintToggle(wordUz, wordRus, isHintVisible = false, blockId = "nouns3")
             )
         }
 
-        // Сохраняем прогресс
-        saveUserProgressBlok3(chatId, filePath, currentRange!!)
+        // Сохраняем прогресс для блока 3
+        saveUserProgressBlok3(chatId, filePath, currentRange)
         println("💾 Прогресс сохранен: $currentRange")
 
         if (!isLastRange) {
@@ -122,6 +123,84 @@ object Nouns3 {
             sendFinalButtons(chatId, bot, wordUz, wordRus, filePath)
         }
     }
+
+
+//Старая:
+//    fun handleBlock3(chatId: Long, bot: Bot, filePath: String, wordUz: String?, wordRus: String?) {
+//        println("🚀 handleBlock3 // Запуск блока 3 для пользователя $chatId")
+//
+//        if (wordUz.isNullOrBlank() || wordRus.isNullOrBlank()) {
+//            sendWordMessage(chatId, bot, filePath)
+//            println("❌ Ошибка: слова не выбраны, запрошен повторный выбор.")
+//            return
+//        }
+//
+//        // Используем неизменяемый список диапазонов из Config
+//        val allRanges = Config.ALL_RANGES_BLOCK_3
+//
+//        // Если у пользователя еще нет порядка столбцов — перемешиваем
+//        if (Globals.userColumnOrder[chatId].isNullOrEmpty()) {
+//            Globals.userColumnOrder[chatId] = allRanges.shuffled().toMutableList()
+//            println("🔀 Перемешали мини-блоки для пользователя $chatId: ${Globals.userColumnOrder[chatId]}")
+//        }
+//
+//        val shuffledRanges = Globals.userColumnOrder[chatId]!!
+//        val currentState = Globals.userStates[chatId] ?: 0
+//        println("📌 Текущее состояние пользователя: $currentState")
+//
+//        // Загружаем баллы пользователя
+//        val completedRanges = getCompletedRanges(chatId, filePath)
+//        println("✅ Пройденные мини-блоки: $completedRanges")
+//
+//        // Ищем первый неповторяющийся диапазон
+//        var currentRange: String? = null
+//        for (range in shuffledRanges) {
+//            if (!completedRanges.contains(range)) {
+//                currentRange = range
+//                break
+//            }
+//        }
+//
+//        // Если ВСЕ 30 диапазонов пройдены, то берем текущий диапазон из списка
+//        if (currentRange == null) {
+//            println("⚠️ ВСЕ 30 мини-блоков уже пройдены! Берем текущий из списка.")
+//            currentRange = shuffledRanges[currentState % shuffledRanges.size]
+//        }
+//
+//        println("🎯 Выбран диапазон: $currentRange")
+//
+//        val messageText = try {
+//            generateMessageFromRange(filePath, "Существительные 3", currentRange!!, wordUz, wordRus)
+//        } catch (e: Exception) {
+//            bot.sendMessage(chatId = ChatId.fromId(chatId), text = "Ошибка при формировании сообщения.")
+//            println("❌ Ошибка при генерации сообщения: ${e.message}")
+//            return
+//        }
+//
+//        val isLastRange = currentState == 5 // 6 сообщений всего
+//        println("📩 Отправка сообщения: \"$messageText\"")
+//
+//        GlobalScope.launch {
+//            TelegramMessageService.updateOrSendMessage(
+//                chatId = chatId,
+//                text = messageText,
+//                //parseMode = ParseMode.MARKDOWN_V2,
+//                replyMarkup = if (isLastRange) null else Keyboards.nextButton(wordUz, wordRus)
+//            )
+//        }
+//
+//        // Сохраняем прогресс
+//        saveUserProgressBlok3(chatId, filePath, currentRange!!)
+//        println("💾 Прогресс сохранен: $currentRange")
+//
+//        if (!isLastRange) {
+//            println("📌 Переход к следующему шагу")
+//        } else {
+//            println("🏁 Мини-блоки завершены, вызываем финальное меню")
+//            updateUserProgressForMiniBlocks(chatId, filePath, shuffledRanges.indices.toList())
+//            sendFinalButtons(chatId, bot, wordUz, wordRus, filePath)
+//        }
+//    }
 
     // Отправка клавиатуры с выбором слов
     fun sendWordMessage(chatId: Long, bot: Bot, filePath: String) {
@@ -229,38 +308,71 @@ object Nouns3 {
     }
 
     // Генерация сообщения из диапазона Excel
-    fun generateMessageFromRange(filePath: String, sheetName: String, range: String, wordUz: String?, wordRus: String?): String {
-        println("SSS generateMessageFromRange // Генерация сообщения из диапазона Excel")
-        println("S1 Вход в функцию. Параметры: filePath=$filePath, sheetName=$sheetName, range=$range, wordUz=$wordUz, wordRus=$wordRus")
 
+    fun generateMessageFromRange(
+        filePath: String,
+        sheetName: String,
+        range: String,
+        wordUz: String?,
+        wordRus: String?,
+        showHint: Boolean = false
+    ): String {
+        println("Nouns3 generateMessageFromRange // Генерация сообщения из диапазона Excel")
         val file = File(filePath)
-        if (!file.exists()) {
-            println("S2 Ошибка: файл $filePath не найден.")
-            throw IllegalArgumentException("Файл $filePath не найден")
-        }
-
+        if (!file.exists()) throw IllegalArgumentException("Файл $filePath не найден")
         val excelManager = ExcelManager(filePath)
-        val result = excelManager.useWorkbook { workbook ->
+        // Формируем исходный текст, который может содержать spoiler‑маркировку (||...||)
+        val rawText = excelManager.useWorkbook { workbook ->
             val sheet = workbook.getSheet(sheetName)
-            if (sheet == null) {
-                println("S3 Ошибка: лист $sheetName не найден.")
-                throw IllegalArgumentException("Лист $sheetName не найден")
-            }
-
-            println("S4 Лист $sheetName найден. Извлекаем ячейки из диапазона $range")
+                ?: throw IllegalArgumentException("Лист $sheetName не найден")
             val cells = extractCellsFromRange(sheet, range, wordUz)
-            println("S5 Извлеченные ячейки: $cells")
-
             val firstCell = cells.firstOrNull() ?: ""
             val messageBody = cells.drop(1).joinToString("\n")
-
-            val res = listOf(firstCell, messageBody).filter { it.isNotBlank() }.joinToString("\n\n")
-            println("S7 Генерация завершена. Результат: $res")
-            res
+            listOf(firstCell, messageBody).filter { it.isNotBlank() }.joinToString("\n\n")
         }
-        println("S6 Файл Excel закрыт.")
-        return result
+        return if (showHint) {
+            // Если подсказка показывается – удаляем все маркеры "||"
+            rawText.replace("||", "")
+        } else {
+            // Если подсказка скрыта – заменяем каждый блок вида "||...||" (с переводами строк) на символ "*"
+            rawText.replace(Regex("\\|\\|.*?\\|\\|", RegexOption.DOT_MATCHES_ALL), "*")
+        }
     }
+
+
+//    Старая:
+//    fun generateMessageFromRange(filePath: String, sheetName: String, range: String, wordUz: String?, wordRus: String?): String {
+//        println("SSS generateMessageFromRange // Генерация сообщения из диапазона Excel")
+//        println("S1 Вход в функцию. Параметры: filePath=$filePath, sheetName=$sheetName, range=$range, wordUz=$wordUz, wordRus=$wordRus")
+//
+//        val file = File(filePath)
+//        if (!file.exists()) {
+//            println("S2 Ошибка: файл $filePath не найден.")
+//            throw IllegalArgumentException("Файл $filePath не найден")
+//        }
+//
+//        val excelManager = ExcelManager(filePath)
+//        val result = excelManager.useWorkbook { workbook ->
+//            val sheet = workbook.getSheet(sheetName)
+//            if (sheet == null) {
+//                println("S3 Ошибка: лист $sheetName не найден.")
+//                throw IllegalArgumentException("Лист $sheetName не найден")
+//            }
+//
+//            println("S4 Лист $sheetName найден. Извлекаем ячейки из диапазона $range")
+//            val cells = extractCellsFromRange(sheet, range, wordUz)
+//            println("S5 Извлеченные ячейки: $cells")
+//
+//            val firstCell = cells.firstOrNull() ?: ""
+//            val messageBody = cells.drop(1).joinToString("\n")
+//
+//            val res = listOf(firstCell, messageBody).filter { it.isNotBlank() }.joinToString("\n\n")
+//            println("S7 Генерация завершена. Результат: $res")
+//            res
+//        }
+//        println("S6 Файл Excel закрыт.")
+//        return result
+//    }
 
     // Экранирование Markdown V2
     fun String.escapeMarkdownV2(): String {
