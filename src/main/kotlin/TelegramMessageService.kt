@@ -1,12 +1,9 @@
-import com.github.kotlintelegrambot.Bot
 import com.github.kotlintelegrambot.config.Config
 import com.github.kotlintelegrambot.entities.InlineKeyboardMarkup
-import com.github.kotlintelegrambot.entities.ParseMode
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.*
 import org.json.JSONObject
 import java.io.IOException
-import java.net.URLEncoder
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -23,6 +20,7 @@ object TelegramMessageService {
         replyMarkupJson: String? = null,
         parseMode: String? = null // добавили параметр
     ): String = suspendCancellableCoroutine { cont ->
+        println("TelegramMessageService editMessageTextViaHttpSuspend")
         val botToken = Config.BOT_TOKEN
         val url = "https://api.telegram.org/bot$botToken/editMessageText"
         println("editMessageTextViaHttpSuspend: наличие parse_mode: ${parseMode}")
@@ -81,6 +79,7 @@ object TelegramMessageService {
         replyMarkupJson: String? = null,
         parseMode: String? = null
     ): String = suspendCancellableCoroutine { cont ->
+        println("TelegramMessageService ")
         val botToken = Config.BOT_TOKEN
         val url = "https://api.telegram.org/bot$botToken/sendMessage"
         val formBodyBuilder = FormBody.Builder()
@@ -118,15 +117,15 @@ object TelegramMessageService {
         })
     }
 
-    // Основная suspend-функция, которая пытается отредактировать существующее сообщение,
-// а если редактирование не удалось – отправляет новое сообщение.
     suspend fun updateOrSendMessage(
         chatId: Long,
         text: String,
         replyMarkup: InlineKeyboardMarkup? = null,
         parseMode: String? = null // опциональный параметр, например, "MarkdownV2"
     ) {
-        println("updateOrSendMessage: Вызывается для chatId=$chatId с текстом: $text")
+        println("TelegramMessageService updateOrSendMessage: Вызывается для chatId=$chatId с текстом: $text")
+        // Добавляем невидимый символ в конец текста, чтобы гарантированно вызвать пересчет и обновление на мобильном клиенте
+        val updatedText = text + "\u200B"
         // Предполагаем, что replyMarkup.toString() выдаёт корректный JSON
         val replyMarkupJson = replyMarkup?.toString()
         val currentMessageId = Globals.userMainMessageId[chatId]
@@ -134,7 +133,7 @@ object TelegramMessageService {
             println("updateOrSendMessage: Найден сохранённый message_id = $currentMessageId")
             try {
                 // Передаём parseMode в запрос редактирования
-                val response = editMessageTextViaHttpSuspend(chatId, currentMessageId.toLong(), text, replyMarkupJson, parseMode)
+                val response = editMessageTextViaHttpSuspend(chatId, currentMessageId.toLong(), updatedText, replyMarkupJson, parseMode)
                 println("updateOrSendMessage: Редактирование прошло, ответ: $response")
                 val json = JSONObject(response)
                 if (!json.getBoolean("ok")) {

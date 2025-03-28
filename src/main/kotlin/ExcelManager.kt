@@ -42,7 +42,6 @@ class ExcelManager(private val filePath: String) {
         println("\nensureUserRecord запущен для chatId = $chatId, filePath = $filePath\n")
         val file = File(filePath)
         if (!file.exists()) {
-            println("Ошибка: Файл $filePath не найден!")
             throw IllegalArgumentException("Файл $filePath не найден")
         }
         val excelManager = ExcelManager(filePath)
@@ -50,10 +49,8 @@ class ExcelManager(private val filePath: String) {
             val sheetName = "Состояние пользователя"
             // Получаем лист или создаём его, если отсутствует
             val sheet = workbook.getSheet(sheetName) ?: run {
-                println("Лист '$sheetName' не найден, создаём новый лист.")
                 workbook.createSheet(sheetName)
             }
-            println("Работаем с листом '$sheetName'. Начинаем поиск в столбце A, начиная со второй строки (индекс 1).")
 
             var recordFound = false
             var targetRowIndex: Int? = null
@@ -62,7 +59,6 @@ class ExcelManager(private val filePath: String) {
                 val row = sheet.getRow(i) ?: continue
                 val cell = row.getCell(0)
                 if (cell == null || cell.toString().trim().isEmpty()) {
-                    println("Строка $i: ячейка пустая. Будет использована для новой записи.")
                     targetRowIndex = i
                     break
                 } else {
@@ -71,9 +67,7 @@ class ExcelManager(private val filePath: String) {
                         CellType.STRING -> cell.stringCellValue.trim().toLongOrNull()
                         else -> null
                     }
-                    println("Строка $i: найден ID = $idValue")
                     if (idValue == chatId) {
-                        println("Строка $i: ID совпадает с chatId = $chatId")
                         recordFound = true
                         targetRowIndex = i
                         break
@@ -84,23 +78,17 @@ class ExcelManager(private val filePath: String) {
             if (targetRowIndex == null) {
                 val lastRow = sheet.iterator().asSequence().maxByOrNull { it.rowNum }
                 targetRowIndex = if (lastRow != null) lastRow.rowNum + 1 else 1
-                println("Не найдено пустой строки, создаём новую запись в строке $targetRowIndex")
             }
             if (!recordFound) {
                 // Создаем новую запись: записываем ID в столбец A и устанавливаем начальные значения 0 в остальных (6 падежей)
                 val row = sheet.getRow(targetRowIndex) ?: sheet.createRow(targetRowIndex)
                 row.createCell(0).setCellValue(chatId.toDouble())
-                println("Записан chatId = $chatId в строке $targetRowIndex, колонка A")
                 for (col in 1..6) {
                     row.createCell(col).setCellValue(0.0)
-                    println("Установлено начальное значение 0.0 в колонке $col строки $targetRowIndex")
                 }
                 excelManager.safelySaveWorkbook(workbook)
-                println("Создана новая запись для chatId = $chatId в строке $targetRowIndex")
             } else {
-                println("Запись для chatId = $chatId уже существует в строке $targetRowIndex. Новая запись не создается.")
             }
         }
     }
-
 }

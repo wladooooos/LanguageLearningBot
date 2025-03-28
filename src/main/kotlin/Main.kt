@@ -1,7 +1,6 @@
 package com.github.kotlintelegrambot.dispatcher
 
 import ExcelManager
-import Nouns1.handleBlock1
 import com.github.kotlintelegrambot.bot
 import com.github.kotlintelegrambot.dispatch
 import com.github.kotlintelegrambot.entities.ChatId
@@ -10,13 +9,9 @@ import com.github.kotlintelegrambot.entities.InlineKeyboardMarkup
 import java.io.File
 import com.github.kotlintelegrambot.Bot
 import com.github.kotlintelegrambot.config.Config
-import com.github.kotlintelegrambot.dispatcher.messageIdList.editMessageTextViaHttp
-import com.github.kotlintelegrambot.dispatcher.sendStartMenu
-import com.github.kotlintelegrambot.dispatcher.sendWelcomeMessage
 import com.github.kotlintelegrambot.entities.KeyboardReplyMarkup
 import com.github.kotlintelegrambot.entities.keyboard.KeyboardButton
 import com.github.kotlintelegrambot.keyboards.Keyboards
-import jdk.internal.joptsimple.internal.Messages.message
 import org.apache.poi.ss.usermodel.CellType
 import org.apache.poi.xssf.usermodel.XSSFColor
 import kotlin.experimental.and
@@ -65,7 +60,9 @@ fun main() {
                     data.startsWith("nouns1Padezh:") -> Nouns1.callPadezh(chatId, bot, data, callbackQuery.id)
                     data == "nouns1Change_word_random" -> Nouns1.callRandomWord(chatId, bot)
                     data == "nouns2" -> Nouns2.callNouns2(chatId, bot, callbackQuery.id)
+                    data.startsWith("nouns2Padezh:") -> Nouns2.callPadezh(chatId, bot, data, callbackQuery.id)
                     data == "nouns3" -> Nouns3.callNouns3(chatId, bot)
+                    data == "nouns3Change_word_random" -> Nouns3.callRandomWord(chatId, bot)
                     data == "test" -> TestBlock.callTestBlock(chatId, bot)
                     data == "adjective1" -> Adjectives1.callAdjective1(chatId, bot)
                     data == "adjective2" -> Adjectives2.callAdjective2(chatId, bot)
@@ -110,7 +107,7 @@ fun main() {
                             val state = Nouns1.validateUserState(chatId, bot)
                             val newKeyboard = if (state != null && state.third == state.second.size - 1) {
                                 // Если это последнее сообщение, заменяем кнопку "Далее" на "Следующий падеж"
-                                Keyboards.nextCaseButtonWithHintToggle(wordUz, wordRus, newHintVisible, blockId, Nouns1.getNextPadezh(state.first))
+                                Keyboards.nextCaseButtonWithHintToggleNouns1( wordUz, wordRus, newHintVisible, blockId)
                             } else {
                                 // Иначе используем стандартную клавиатуру с кнопкой "Далее"
                                 Keyboards.nextButtonWithHintToggle(wordUz, wordRus, newHintVisible, blockId)
@@ -149,20 +146,6 @@ fun callMainMenu(chatId: Long, bot: Bot) {
     Globals.userColumnOrder.remove(chatId)
     sendStartMenu(chatId, bot)
 }
-
-//fun callPadezh(chatId: Long, bot: Bot, data: String) {
-//    println("main callPadezh 23. Обработка выбора падежа")
-//    val selectedPadezh = data.removePrefix("Padezh:")
-//    Globals.userPadezh[chatId] = selectedPadezh
-//    Globals.userStates[chatId] = 0
-//    Globals.userColumnOrder.remove(chatId)
-//    bot.sendMessage(
-//        chatId = ChatId.fromId(chatId),
-//        text = """Падеж: $selectedPadezh
-//                                |Слово: ${Globals.userWordUz[chatId]} - ${Globals.userWordRus[chatId]}""".trimMargin()
-//    )
-//    handleBlock(chatId, bot, Config.TABLE_FILE, Globals.userWordUz[chatId], Globals.userWordRus[chatId])
-//}
 
 fun callWord(chatId: Long, bot: Bot, data: String) {
     println("main callWord 29. Обработка выбора слова")
@@ -207,7 +190,7 @@ fun callNextAdjective(chatId: Long, bot: Bot) {
 }
 
 fun callChangeWord(chatId: Long, bot: Bot) {
-    println("callChangeWord: Обработка изменения слова – сброс состояния")
+    println("main callChangeWord: Обработка изменения слова – сброс состояния")
     Globals.userStates[chatId] = 0
     Globals.userWords.remove(chatId)
     Globals.userWordUz.remove(chatId)
@@ -217,14 +200,14 @@ fun callChangeWord(chatId: Long, bot: Bot) {
 }
 
 fun callChangePadezh(chatId: Long, bot: Bot) {
-    println("callChangePadezh: Обработка изменения выбранного падежа")
+    println("main callChangePadezh: Обработка изменения выбранного падежа")
     Globals.userPadezh.remove(chatId)
     Globals.userColumnOrder.remove(chatId)
     sendPadezhSelection(chatId, bot, Config.TABLE_FILE)
 }
 
 fun callReset(chatId: Long, bot: Bot) {
-    println("callReset: Обработка сброса состояния падежа")
+    println("main callReset: Обработка сброса состояния падежа")
     Globals.userPadezh.remove(chatId)
     Globals.userStates.remove(chatId)
     Globals.userColumnOrder.remove(chatId)
@@ -232,7 +215,7 @@ fun callReset(chatId: Long, bot: Bot) {
 }
 
 fun callNextBlock(chatId: Long, bot: Bot) {
-    println("callNextBlock: Обработка перехода к следующему блоку")
+    println("main callNextBlock: Обработка перехода к следующему блоку")
     val currentBlock = Globals.userBlocks[chatId] ?: 1
     initializeUserBlockStates(chatId, Config.TABLE_FILE)
     val blockStates = Globals.userBlockCompleted[chatId] ?: Triple(false, false, false)
@@ -274,7 +257,7 @@ fun callNextBlock(chatId: Long, bot: Bot) {
 }
 
 fun callPrevBlock(chatId: Long, bot: Bot) {
-    println("callPrevBlock: Обработка перехода к предыдущему блоку")
+    println("main callPrevBlock: Обработка перехода к предыдущему блоку")
     val currentBlock = Globals.userBlocks[chatId] ?: 1
     Globals.userStates.remove(chatId)
     Globals.userPadezh.remove(chatId)
@@ -285,21 +268,21 @@ fun callPrevBlock(chatId: Long, bot: Bot) {
 }
 
 fun callNextVerbs1(chatId: Long, bot: Bot) {
-    println("callNextVerbs1: Переход к следующему состоянию блока глаголов 1")
+    println("main callNextVerbs1: Переход к следующему состоянию блока глаголов 1")
     val currentState = Globals.userStates[chatId] ?: 0
     Globals.userStates[chatId] = currentState + 1
     Verbs1.handleBlockVerbs1(chatId, bot)
 }
 
 fun callNextVerbs2(chatId: Long, bot: Bot) {
-    println("callNextVerbs2: Переход к следующему состоянию блока глаголов 2")
+    println("main callNextVerbs2: Переход к следующему состоянию блока глаголов 2")
     val currentState = Globals.userStates[chatId] ?: 0
     Globals.userStates[chatId] = currentState + 1
     Verbs2.handleBlockVerbs2(chatId, bot)
 }
 
 fun callNextVerbs3(chatId: Long, bot: Bot) {
-    println("callNextVerbs3: Переход к следующему состоянию блока глаголов 3")
+    println("main callNextVerbs3: Переход к следующему состоянию блока глаголов 3")
     val currentState = Globals.userStates[chatId] ?: 0
     Globals.userStates[chatId] = currentState + 1
     Verbs3.handleBlockVerbs3(chatId, bot)
@@ -307,10 +290,6 @@ fun callNextVerbs3(chatId: Long, bot: Bot) {
 
 fun sendWelcomeMessage(chatId: Long, bot: Bot) {
     println("main sendWelcomeMessage 162. Отправка приветственного сообщения")
-    val keyboardMarkup = KeyboardReplyMarkup(
-        keyboard = Keyboards.getStartButton().keyboard,
-        resizeKeyboard = true
-    )
     bot.sendMessage(
         chatId = ChatId.fromId(chatId),
         text = """Здравствуйте!
@@ -342,7 +321,7 @@ fun handleBlock(chatId: Long, bot: Bot, filePath: String, wordUz: String?, wordR
     initializeUserBlockStates(chatId, filePath)
     println("currentBlock = $currentBlock")
     when (currentBlock) {
-        1 -> handleBlock1(chatId, bot, filePath, wordUz, wordRus)
+        1 -> Nouns1.handleBlock1(chatId, bot, filePath, wordUz, wordRus)
         2 -> Nouns2.handleBlock2(chatId, bot, filePath, wordUz, wordRus)
         3 -> Nouns3.handleBlock3(chatId, bot, filePath, wordUz, wordRus)
         4 -> TestBlock.handleBlockTest(chatId, bot)
@@ -427,11 +406,7 @@ fun getUserScoresForBlock(chatId: Long, filePath: String, PadezhColumns: Map<Str
     return scores
 }
 
-fun generatePadezhSelectionButtons(
-    currentBlock: Int,
-    PadezhColumns: Map<String, Int>,
-    userScores: Map<String, Int>
-): List<List<InlineKeyboardButton>> {
+fun generatePadezhSelectionButtons(currentBlock: Int, PadezhColumns: Map<String, Int>, userScores: Map<String, Int>): List<List<InlineKeyboardButton>> {
     println("main generatePadezhSelectionButtons 207. создает кнопки для выбора падежа: для каждого падежа из карты она формирует кнопку с названием и текущим баллом пользователя, а затем добавляет кнопки навигации («⬅️ Предыдущий блок» и «➡️ Следующий блок») в зависимости от номера текущего блока.")
     val buttons = PadezhColumns.keys.map { PadezhName ->
         val score = userScores[PadezhName] ?: 0
@@ -479,7 +454,6 @@ fun sendWordMessage(chatId: Long, bot: Bot, filePath: String) {
     }
 }
 
-
 fun createWordSelectionKeyboardFromExcel(filePath: String, sheetName: String): InlineKeyboardMarkup {
     println("main createWordSelectionKeyboardFromExcel 219. принимает путь к Excel-файлу и название листа, проверяет их наличие, выбирает случайные 10 строк из указанного листа, извлекает из каждой строки слова на узбекском и русском языках, создает для каждой пары кнопки, группирует их по 2 и возвращает готовую инлайн-клавиатуру для выбора слова.")
     val file = File(filePath)
@@ -509,19 +483,6 @@ fun extractWordsFromCallback(data: String): Pair<String, String> {
     val wordRus = content.substringAfter(" - ").trim()
     return wordUz to wordRus
 }
-
-fun sendFinalButtons(chatId: Long, bot: Bot, wordUz: String?, wordRus: String?, filePath: String) {
-    println("main sendFinalButtons 237. Отправка финального меню")
-    GlobalScope.launch {
-        TelegramMessageService.updateOrSendMessage(
-        chatId = chatId,
-        text = "Вы завершили все этапы работы с этим словом и падежом. Что будем делать дальше?",
-        replyMarkup = Keyboards.finalButtons(wordUz, wordRus, Globals.userBlocks[chatId] ?: 1)
-    )
-    }
-}
-
-
 
 fun addScoreForPadezh(chatId: Long, Padezh: String, filePath: String, block: Int) {
     println("main addScoreForPadezh 252. обновляет счет выбранного падежа для пользователя. На основе переданного блока она определяет нужный столбец в Excel-файле, затем ищет в листе \"Состояние пользователя\" строку с данным chatId и увеличивает значение в соответствующей ячейке на 1, сохраняя изменения.")
@@ -671,18 +632,12 @@ fun initializeUserBlockStates(chatId: Long, filePath: String) {
     Globals.userBlockCompleted[chatId] = Triple(block1Completed, block2Completed, block3Completed)
 }
 
-fun checkUserState(
-    chatId: Long,
-    filePath: String,
-    sheetName: String = "Состояние пользователя",
-    block: Int = 1
-): Boolean {
+fun checkUserState(chatId: Long, filePath: String, sheetName: String = "Состояние пользователя", block: Int = 1): Boolean {
     println("main checkUserState 239. проверяет, удовлетворяет ли состояние пользователя заданным условиям для конкретного блока. Для этого она:\n" +
-            "\n" +
             "Определяет диапазон столбцов для блока (блок 1: столбцы 1–6, блок 2: 7–12, блок 3: 13–18).\n" +
             "Проверяет, существует ли Excel-файл с данными, и открывает лист (по умолчанию \"Состояние пользователя\").\n" +
             "Ищет в файле строку, где первый столбец соответствует chatId, и затем проверяет, что значения во всех столбцах выбранного диапазона больше нуля.\n" +
-            "Если все проверки проходят, функция возвращает true, иначе – false.")
+            "Если все проверки проходят, функция возвращает true, иначе – false.\n")
     val columnRanges = mapOf(
         1 to (1..6),
         2 to (7..12),
@@ -714,44 +669,3 @@ fun checkUserState(
     }
     return userStateFound ?: false
 }
-
-//fun updateOrSendMessage(
-//    chatId: Long,
-//    bot: Bot,
-//    text: String,
-//    replyMarkup: InlineKeyboardMarkup? = null
-//) {
-//    println("updateOrSendMessage: Вызывается для chatId=$chatId с текстом: $text")
-//    val currentMessageId = Globals.userMainMessageId[chatId]
-//    // Предполагаем, что replyMarkup.toString() выдаёт корректный JSON
-//    val replyMarkupJson = replyMarkup?.toString()
-//    if (currentMessageId != null) {
-//        println("updateOrSendMessage: Найден сохранённый message_id = $currentMessageId")
-//        try {
-//            // Вместо стандартного метода редактирования вызываем нашу функцию для логирования ответа
-//            val response = editMessageTextViaHttp(chatId, currentMessageId.toLong(), text, replyMarkupJson)
-//            println("updateOrSendMessage: Редактирование прошло, ответ: $response")
-//            // Можно дополнительно проверить, что в ответе ok=true, иначе сбросить id.
-//            val json = org.json.JSONObject(response)
-//            if (!json.getBoolean("ok")) {
-//                println("updateOrSendMessage: Ответ от Telegram не успешен, отправляем новое сообщение.")
-//                Globals.userMainMessageId.remove(chatId)
-//            } else {
-//                return
-//            }
-//        } catch (e: Exception) {
-//            println("updateOrSendMessage: Ошибка редактирования сообщения: ${e.message}")
-//            println("updateOrSendMessage: Переходим к отправке нового сообщения.")
-//        }
-//    } else {
-//        println("updateOrSendMessage: Сохранённого message_id не найдено, отправляем новое сообщение.")
-//    }
-//    // Отправляем новое сообщение через HTTP
-//    val newMessageId = messageIdList.sendMessageViaHttp(chatId, text, replyMarkupJson)
-//    if (newMessageId != null) {
-//        Globals.userMainMessageId[chatId] = newMessageId
-//        println("updateOrSendMessage: Новое сообщение отправлено, сохранён message_id = $newMessageId")
-//    } else {
-//        println("updateOrSendMessage: Не удалось получить message_id нового сообщения!")
-//    }
-//}

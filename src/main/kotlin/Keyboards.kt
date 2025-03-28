@@ -8,16 +8,9 @@ import com.github.kotlintelegrambot.entities.keyboard.KeyboardButton
 
 object Keyboards {
 
-    // Клавиатура для команды /start
-    fun getStartButton(): KeyboardReplyMarkup {
-        val buttons = listOf(
-            listOf(KeyboardButton("/start"))
-        )
-        return KeyboardReplyMarkup(keyboard = buttons, resizeKeyboard = true)
-    }
-
     // Стартовое меню для выбора блока
     fun startMenu(): InlineKeyboardMarkup {
+        println("Keyboards startMenu")
         val buttons = listOf(
             listOf(InlineKeyboardButton.CallbackData("Существительные 1", "nouns1")),
             listOf(InlineKeyboardButton.CallbackData("Существительные 2", "nouns2")),
@@ -32,24 +25,9 @@ object Keyboards {
         return InlineKeyboardMarkup.create(buttons)
     }
 
-    // Клавиатура для выбора падежа
-    fun padezhSelection(currentBlock: Int, padezhColumns: Map<String, Int>, userScores: Map<String, Int>): InlineKeyboardMarkup {
-        val buttons = padezhColumns.keys.map { padezh ->
-            val score = userScores[padezh] ?: 0
-            InlineKeyboardButton.CallbackData("$padezh [$score]", "Padezh:$padezh")
-        }.map { listOf(it) }.toMutableList()
-
-        if (currentBlock > 1) {
-            buttons.add(listOf(InlineKeyboardButton.CallbackData("⬅️ Предыдущий блок", "prev_block")))
-        }
-        if (currentBlock < 3) {
-            buttons.add(listOf(InlineKeyboardButton.CallbackData("➡️ Следующий блок", "next_block")))
-        }
-        return InlineKeyboardMarkup.create(buttons)
-    }
-
     // Финальное меню для блоков прилагательных
     fun finalAdjectiveButtons(currentBlock: Int): InlineKeyboardMarkup {
+        println("Keyboards finalAdjectiveButtons")
         val repeatCallback = if (currentBlock == 5) "block:adjective1" else "block:adjective2"
         val changeWordsCallback = if (currentBlock == 5) "change_words_adjective1" else "change_words_adjective2"
         val navigationButton = if (currentBlock == 5) {
@@ -68,6 +46,7 @@ object Keyboards {
 
     // Финальное меню для остальных блоков
     fun finalButtons(wordUz: String?, wordRus: String?, currentBlock: Int): InlineKeyboardMarkup {
+        println("Keyboards finalButtons")
         val buttons = mutableListOf(
             listOf(InlineKeyboardButton.CallbackData("Повторить", "repeat:$wordUz:$wordRus")),
             listOf(InlineKeyboardButton.CallbackData("Изменить слово", "change_word"))
@@ -88,18 +67,18 @@ object Keyboards {
 
     // Клавиатура с одной кнопкой "Далее"
     fun nextButton(wordUz: String?, wordRus: String?): InlineKeyboardMarkup {
+        println("Keyboards nextButton")
         val buttons = listOf(
-            listOf(InlineKeyboardButton.CallbackData("Выбранное слово: $wordRus - $wordUz", "nouns1Change_word_random")),
+            listOf(InlineKeyboardButton.CallbackData("Сменить слово", "nouns1Change_word_random")),
             //listOf(InlineKeyboardButton.CallbackData("Меню", "main_menu")),
             listOf(InlineKeyboardButton.CallbackData("Далее", "next:$wordUz:$wordRus"))
         )
         return InlineKeyboardMarkup.create(buttons)
     }
 
-
-
     // Клавиатура для перехода к блоку прилагательных (например, из теста)
     fun goToAdjectivesButton(): InlineKeyboardMarkup {
+        println("Keyboards goToAdjectivesButton")
         return InlineKeyboardMarkup.createSingleRowKeyboard(
             InlineKeyboardButton.CallbackData("Перейти к прилагательным", "block:adjective1")
         )
@@ -107,6 +86,7 @@ object Keyboards {
 
     // Клавиатура с кнопкой "Вернуться к блокам"
     fun returnToBlocksButton(): InlineKeyboardMarkup {
+        println("Keyboards returnToBlocksButton")
         return InlineKeyboardMarkup.createSingleRowKeyboard(
             InlineKeyboardButton.CallbackData("Вернуться к блокам", "main_menu")
         )
@@ -114,6 +94,7 @@ object Keyboards {
 
     // Пример клавиатуры «Далее» специально для глаголов
     fun nextVerbsButton(): InlineKeyboardMarkup {
+        println("Keyboards nextVerbsButton")
         return InlineKeyboardMarkup.createSingleRowKeyboard(
             InlineKeyboardButton.CallbackData("Далее", "next_verbs1")
         )
@@ -121,14 +102,16 @@ object Keyboards {
 
     // Кнопка-заглушка в конце блока
     fun finalVerbsButton(): InlineKeyboardMarkup {
+        println("Keyboards finalVerbsButton")
         return InlineKeyboardMarkup.createSingleRowKeyboard(
             InlineKeyboardButton.CallbackData("В главное меню", "main_menu")
         )
     }
 
     fun nextButtonWithHintToggle(wordUz: String?, wordRus: String?, isHintVisible: Boolean, blockId: String): InlineKeyboardMarkup {
+        println("Keyboards nextButtonWithHintToggle")
         val baseButtons = listOf(
-            listOf(InlineKeyboardButton.CallbackData("Выбранное слово: $wordRus - $wordUz", "nouns1Change_word_random")),
+            listOf(InlineKeyboardButton.CallbackData("Сменить слово", "nouns1Change_word_random")),
             //listOf(InlineKeyboardButton.CallbackData("Меню", "main_menu")),
             listOf(InlineKeyboardButton.CallbackData("Далее", "next:$wordUz:$wordRus"))
         )
@@ -139,20 +122,15 @@ object Keyboards {
         return InlineKeyboardMarkup.create(baseButtons + listOf(toggleButtonRow))
     }
 
-    fun nextPadezhButton(nextPadezh: String): InlineKeyboardMarkup {
-        val button = InlineKeyboardButton.CallbackData("Выбрать падеж", "nouns1")
-        return InlineKeyboardMarkup.createSingleRowKeyboard(button)
-    }
-
-    fun nextCaseButtonWithHintToggle(
+    fun nextCaseButtonWithHintToggleNouns1(
         wordUz: String?,
         wordRus: String?,
         isHintVisible: Boolean,
         blockId: String,
-        nextPadezh: String
     ): InlineKeyboardMarkup {
+        println("Keyboards nextCaseButtonWithHintToggle")
         val selectedWordRow = listOf(
-            InlineKeyboardButton.CallbackData("Выбранное слово: $wordRus - $wordUz", "nouns1Change_word_random")
+            InlineKeyboardButton.CallbackData("Сменить слово", "nouns1Change_word_random")
         )
         val nextCaseRow = listOf(
             InlineKeyboardButton.CallbackData("Выбрать падеж", "nouns1")
@@ -163,27 +141,28 @@ object Keyboards {
         return InlineKeyboardMarkup.create(listOf(selectedWordRow, nextCaseRow, toggleButtonRow))
     }
 
-//    fun transitionToNouns2ButtonWithHintToggle(
-//        wordUz: String?,
-//        wordRus: String?,
-//        isHintVisible: Boolean,
-//        blockId: String
-//    ): InlineKeyboardMarkup {
-//        val selectedWordRow = listOf(
-//            InlineKeyboardButton.CallbackData("Выбранное слово: $wordRus - $wordUz", "nouns1Change_word_random")
-//        )
-//        val transitionRow = listOf(
-//            InlineKeyboardButton.CallbackData("Перейти к Существительные 2", "nouns2")
-//        )
-//        val toggleText = if (isHintVisible) "Скрыть подсказку" else "Показать подсказку"
-//        val toggleCallback = "toggleHint:${isHintVisible}:$blockId:$wordUz:$wordRus"
-//        val toggleButtonRow = listOf(InlineKeyboardButton.CallbackData(toggleText, toggleCallback))
-//        return InlineKeyboardMarkup.create(listOf(selectedWordRow, transitionRow, toggleButtonRow))
-//    }
-//
-//    fun caseSelectionButton(): InlineKeyboardMarkup {
-//        return InlineKeyboardMarkup.createSingleRowKeyboard(
-//            InlineKeyboardButton.CallbackData("Выбор подежа", "nouns1")
-//        )
-//    }
+    fun nextCaseButtonWithHintToggleNouns2(
+        wordUz: String?,
+        wordRus: String?,
+    ): InlineKeyboardMarkup {
+        println("Keyboards nextCaseButtonWithHintToggle")
+        val selectedWordRow = listOf(
+            InlineKeyboardButton.CallbackData("Сменить слово", "nouns1Change_word_random")
+        )
+        val nextCaseRow = listOf(
+            InlineKeyboardButton.CallbackData("Выбрать падеж", "nouns2")
+        )
+        return InlineKeyboardMarkup.create(listOf(selectedWordRow, nextCaseRow))
+    }
+
+    fun buttonNextChengeWord(wordUz: String?, wordRus: String?): InlineKeyboardMarkup {
+        println("Keyboards nextButton")
+        val buttons = listOf(
+            listOf(InlineKeyboardButton.CallbackData("Сменить слово", "nouns3Change_word_random")),
+            //listOf(InlineKeyboardButton.CallbackData("Меню", "main_menu")),
+            listOf(InlineKeyboardButton.CallbackData("Далее", "next:$wordUz:$wordRus"))
+        )
+        return InlineKeyboardMarkup.create(buttons)
+    }
+
 }
