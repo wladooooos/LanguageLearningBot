@@ -160,4 +160,126 @@ object TelegramMessageService {
         Globals.userMainMessageId[chatId] = newMessageId
         println("updateOrSendMessage: Новое сообщение отправлено, сохранён message_id = $newMessageId")
     }
+
+    //Ниже - отправка сообщений для блоков без Markdown!!!!!!
+
+    suspend fun editMessageTextViaHttpSuspendWithoutMarkdown(
+        chatId: Long,
+        messageId: Long,
+        text: String,
+        replyMarkupJson: String? = null
+    ): String = suspendCancellableCoroutine { cont ->
+        println("editMessageTextViaHttpSuspendWithoutMarkdown: отправляем запрос для редактирования")
+        val botToken = Config.BOT_TOKEN
+        val url = "https://api.telegram.org/bot$botToken/editMessageText"
+        val formBodyBuilder = FormBody.Builder()
+            .add("chat_id", chatId.toString())
+            .add("message_id", messageId.toString())
+            .add("text", text)
+        if (replyMarkupJson != null) {
+            formBodyBuilder.add("reply_markup", replyMarkupJson)
+        }
+        // Не добавляем parse_mode
+        val requestBody = formBodyBuilder.build()
+        val request = Request.Builder()
+            .url(url)
+            .post(requestBody)
+            .build()
+
+        okHttpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                println("editMessageTextViaHttpSuspendWithoutMarkdown: Ошибка запроса: ${e.message}")
+                if (cont.isActive) cont.resumeWithException(e)
+            }
+            override fun onResponse(call: Call, response: Response) {
+                try {
+                    val responseText = response.body?.string() ?: ""
+                    println("editMessageTextViaHttpSuspendWithoutMarkdown: Получен ответ: $responseText")
+                    if (cont.isActive) cont.resume(responseText)
+                } catch (ex: Exception) {
+                    if (cont.isActive) cont.resumeWithException(ex)
+                }
+            }
+        }
+        )
+    }
+
+    suspend fun sendMessageViaHttpSuspendWithoutMarkdown(
+        chatId: Long,
+        text: String,
+        replyMarkupJson: String? = null
+    ): String = suspendCancellableCoroutine { cont ->
+        println("sendMessageViaHttpSuspendWithoutMarkdown: Отправляем запрос для отправки нового сообщения")
+        val botToken = Config.BOT_TOKEN
+        val url = "https://api.telegram.org/bot$botToken/sendMessage"
+        val formBodyBuilder = FormBody.Builder()
+            .add("chat_id", chatId.toString())
+            .add("text", text)
+        if (replyMarkupJson != null) {
+            formBodyBuilder.add("reply_markup", replyMarkupJson)
+        }
+        // Не добавляем parse_mode
+        val requestBody = formBodyBuilder.build()
+        val request = Request.Builder()
+            .url(url)
+            .post(requestBody)
+            .build()
+
+        okHttpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                println("sendMessageViaHttpSuspendWithoutMarkdown: Ошибка запроса: ${e.message}")
+                if (cont.isActive) cont.resumeWithException(e)
+            }
+            override fun onResponse(call: Call, response: Response) {
+                try {
+                    val responseText = response.body?.string() ?: ""
+                    println("sendMessageViaHttpSuspendWithoutMarkdown: Получен ответ: $responseText")
+                    if (cont.isActive) cont.resume(responseText)
+                } catch (ex: Exception) {
+                    if (cont.isActive) cont.resumeWithException(ex)
+                }
+            }
+        })
+    }
+
+    suspend fun updateOrSendMessageWithoutMarkdown(
+        chatId: Long,
+        text: String,
+        replyMarkup: InlineKeyboardMarkup? = null
+    ) {
+        println("updateOrSendMessageWithoutMarkdown: Вызывается для chatId=$chatId с текстом: $text")
+        val updatedText = text + "\u200B"
+        val replyMarkupJson = replyMarkup?.toString()
+        val currentMessageId = Globals.userMainMessageId[chatId]
+        if (currentMessageId != null) {
+            println("updateOrSendMessageWithoutMarkdown: Найден сохранённый message_id = $currentMessageId")
+            try {
+                val response = editMessageTextViaHttpSuspendWithoutMarkdown(chatId, currentMessageId.toLong(), updatedText, replyMarkupJson)
+                println("updateOrSendMessageWithoutMarkdown: Редактирование прошло, ответ: $response")
+                val json = JSONObject(response)
+                if (!json.getBoolean("ok")) {
+                    println("updateOrSendMessageWithoutMarkdown: Ответ от Telegram не успешен, отправляем новое сообщение.")
+                    Globals.userMainMessageId.remove(chatId)
+                } else {
+                    return
+                }
+            } catch (e: Exception) {
+                println("updateOrSendMessageWithoutMarkdown: Ошибка редактирования сообщения: ${e.message}")
+                println("updateOrSendMessageWithoutMarkdown: Переходим к отправке нового сообщения.")
+            }
+        } else {
+            println("updateOrSendMessageWithoutMarkdown: Сохранённого message_id не найдено, отправляем новое сообщение.")
+        }
+        val newResponse = sendMessageViaHttpSuspendWithoutMarkdown(chatId, updatedText, replyMarkupJson)
+        println("updateOrSendMessageWithoutMarkdown: Ответ нового сообщения: $newResponse")
+        val newJson = JSONObject(newResponse)
+        if (!newJson.getBoolean("ok")) {
+            throw Exception("Не удалось отправить новое сообщение, ответ: $newResponse")
+        }
+        val newMessageId = newJson.getJSONObject("result").getInt("message_id")
+        Globals.userMainMessageId[chatId] = newMessageId
+        println("updateOrSendMessageWithoutMarkdown: Новое сообщение отправлено, сохранён message_id = $newMessageId")
+    }
+
+
 }

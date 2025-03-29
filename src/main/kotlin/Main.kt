@@ -64,7 +64,7 @@ fun main() {
                     data == "nouns3" -> Nouns3.callNouns3(chatId, bot)
                     data == "nouns3Change_word_random" -> Nouns3.callRandomWord(chatId, bot)
                     data == "test" -> TestBlock.callTestBlock(chatId, bot)
-                    data == "adjective1" -> Adjectives1.callAdjective1(chatId, bot)
+                    data == "adjective1" -> Adjectives1.callAdjective1(chatId, bot, callbackQuery.id)
                     data == "adjective2" -> Adjectives2.callAdjective2(chatId, bot)
                     data == "verbs1" -> Verbs1.callVerbs1(chatId, bot)
                     data == "verbs2" -> Verbs2.callVerbs2(chatId, bot)
@@ -101,6 +101,8 @@ fun main() {
                                 "nouns1" -> Nouns1.generateMessageFromRange(filePath, sheetName, range, wordUz, wordRus, newHintVisible)
                                 "nouns2" -> Nouns2.generateMessageFromRange(filePath, sheetName, range, wordUz, wordRus, newHintVisible)
                                 "nouns3" -> Nouns3.generateMessageFromRange(filePath, sheetName, range, wordUz, wordRus, newHintVisible)
+                                "adjective1" -> Adjectives1.generateAdjectiveMessage(filePath, sheetName, range, Globals.userReplacements[chatId]!!, newHintVisible)
+                                //"adjective2" -> Adjectives2.generateAdjectiveMessage(filePath, sheetName, range, Globals.userReplacements[chatId]!!, newHintVisible)
                                 else -> throw IllegalArgumentException("Неизвестный blockId: $blockId")
                             }
                             // Определяем, является ли текущее сообщение последним в выбранном падеже.
@@ -115,6 +117,30 @@ fun main() {
                             TelegramMessageService.updateOrSendMessage(chatId, newMessageText, newKeyboard)
                         }
                     }
+                    data.startsWith("toggleHintAdjective1:") -> {
+                        val parts = data.split(":")
+                        if (parts.size >= 2) {
+                            val currentHintVisible = parts[1].toBoolean()
+                            val newHintVisible = !currentHintVisible
+                            val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
+                            val filePath = Config.TABLE_FILE
+                            // Получаем сохранённые для данного чата лист и диапазон
+                            val sheetName = Globals.currentSheetName[chatId]
+                                ?: throw IllegalStateException("Нет текущего листа для chatId=$chatId")
+                            val range = Globals.currentRange[chatId]
+                                ?: throw IllegalStateException("Нет текущего диапазона для chatId=$chatId")
+                            val newMessageText = Adjectives1.generateAdjectiveMessage(
+                                filePath,
+                                sheetName,
+                                range,
+                                Globals.userReplacements[chatId]!!,
+                                newHintVisible
+                            )
+                            // Формируем новую клавиатуру, не передавая wordUz и wordRus
+                            val newKeyboard = Keyboards.adjective1HintToggleKeyboard(newHintVisible)
+                            TelegramMessageService.updateOrSendMessageWithoutMarkdown(chatId, newMessageText, newKeyboard)
+                        }
+                    }
 
                 }
             }
@@ -123,7 +149,7 @@ fun main() {
     bot.startPolling()
 }
 
-fun commandStart(chatId: Long, bot: Bot) {
+private fun commandStart(chatId: Long, bot: Bot) {
     println("main command(start) 5. Вход в обработчик команды /start")
     Globals.userStates.remove(chatId)
     Globals.userPadezh.remove(chatId)
@@ -136,7 +162,7 @@ fun commandStart(chatId: Long, bot: Bot) {
     sendStartMenu(chatId, bot)
 }
 
-fun callMainMenu(chatId: Long, bot: Bot) {
+private fun callMainMenu(chatId: Long, bot: Bot) {
     println("main callbackQuery main_menu 21. Сброс состояния и возврат в главное меню")
     Globals.userStates.remove(chatId)
     Globals.userPadezh.remove(chatId)
@@ -147,7 +173,7 @@ fun callMainMenu(chatId: Long, bot: Bot) {
     sendStartMenu(chatId, bot)
 }
 
-fun callWord(chatId: Long, bot: Bot, data: String) {
+private fun callWord(chatId: Long, bot: Bot, data: String) {
     println("main callWord 29. Обработка выбора слова")
     val result = extractWordsFromCallback(data)
     Globals.userColumnOrder.remove(chatId)
@@ -158,7 +184,7 @@ fun callWord(chatId: Long, bot: Bot, data: String) {
     handleBlock(chatId, bot, Config.TABLE_FILE, Globals.userWordUz[chatId], Globals.userWordRus[chatId])
 }
 
-fun callNext(chatId: Long, bot: Bot, data: String) {
+private fun callNext(chatId: Long, bot: Bot, data: String) {
     println("main callNext 37. Обработка перехода к следующему состоянию")
     val params = data.removePrefix("next:").split(":")
     if (params.size == 2) {
@@ -170,7 +196,7 @@ fun callNext(chatId: Long, bot: Bot, data: String) {
     }
 }
 
-fun callRepeat(chatId: Long, bot: Bot, data: String) {
+private fun callRepeat(chatId: Long, bot: Bot, data: String) {
     println("main callRepeat 44. Обработка повторного запуска блока с тем же словом")
     val params = data.removePrefix("repeat:").split(":")
     if (params.size == 2) {
@@ -182,14 +208,14 @@ fun callRepeat(chatId: Long, bot: Bot, data: String) {
     }
 }
 
-fun callNextAdjective(chatId: Long, bot: Bot) {
+private fun callNextAdjective(chatId: Long, bot: Bot) {
     println("main callNext_adjective 51. Обработка перехода в блоке прилагательных")
     val currentState = Globals.userStates[chatId] ?: 0
     Globals.userStates[chatId] = currentState + 1
     handleBlock(chatId, bot, Config.TABLE_FILE, Globals.userWordUz[chatId], Globals.userWordRus[chatId])
 }
 
-fun callChangeWord(chatId: Long, bot: Bot) {
+private fun callChangeWord(chatId: Long, bot: Bot) {
     println("main callChangeWord: Обработка изменения слова – сброс состояния")
     Globals.userStates[chatId] = 0
     Globals.userWords.remove(chatId)
@@ -199,14 +225,14 @@ fun callChangeWord(chatId: Long, bot: Bot) {
     sendWordMessage(chatId, bot, Config.TABLE_FILE)
 }
 
-fun callChangePadezh(chatId: Long, bot: Bot) {
+private fun callChangePadezh(chatId: Long, bot: Bot) {
     println("main callChangePadezh: Обработка изменения выбранного падежа")
     Globals.userPadezh.remove(chatId)
     Globals.userColumnOrder.remove(chatId)
     sendPadezhSelection(chatId, bot, Config.TABLE_FILE)
 }
 
-fun callReset(chatId: Long, bot: Bot) {
+private fun callReset(chatId: Long, bot: Bot) {
     println("main callReset: Обработка сброса состояния падежа")
     Globals.userPadezh.remove(chatId)
     Globals.userStates.remove(chatId)
@@ -214,7 +240,7 @@ fun callReset(chatId: Long, bot: Bot) {
     sendPadezhSelection(chatId, bot, Config.TABLE_FILE)
 }
 
-fun callNextBlock(chatId: Long, bot: Bot) {
+private fun callNextBlock(chatId: Long, bot: Bot) {
     println("main callNextBlock: Обработка перехода к следующему блоку")
     val currentBlock = Globals.userBlocks[chatId] ?: 1
     initializeUserBlockStates(chatId, Config.TABLE_FILE)
@@ -233,7 +259,7 @@ fun callNextBlock(chatId: Long, bot: Bot) {
         }
         currentBlock == 3 && blockStates.third -> {
             Globals.userBlocks[chatId] = 4
-            checkBlocksBeforeTest(chatId, bot, Config.TABLE_FILE)
+            TestBlock.checkBlocksBeforeTest(chatId, bot, Config.TABLE_FILE)
         }
         else -> {
             val notCompletedBlocks = mutableListOf<String>()
@@ -256,7 +282,7 @@ fun callNextBlock(chatId: Long, bot: Bot) {
     }
 }
 
-fun callPrevBlock(chatId: Long, bot: Bot) {
+private fun callPrevBlock(chatId: Long, bot: Bot) {
     println("main callPrevBlock: Обработка перехода к предыдущему блоку")
     val currentBlock = Globals.userBlocks[chatId] ?: 1
     Globals.userStates.remove(chatId)
@@ -267,28 +293,28 @@ fun callPrevBlock(chatId: Long, bot: Bot) {
     }
 }
 
-fun callNextVerbs1(chatId: Long, bot: Bot) {
+private fun callNextVerbs1(chatId: Long, bot: Bot) {
     println("main callNextVerbs1: Переход к следующему состоянию блока глаголов 1")
     val currentState = Globals.userStates[chatId] ?: 0
     Globals.userStates[chatId] = currentState + 1
     Verbs1.handleBlockVerbs1(chatId, bot)
 }
 
-fun callNextVerbs2(chatId: Long, bot: Bot) {
+private fun callNextVerbs2(chatId: Long, bot: Bot) {
     println("main callNextVerbs2: Переход к следующему состоянию блока глаголов 2")
     val currentState = Globals.userStates[chatId] ?: 0
     Globals.userStates[chatId] = currentState + 1
     Verbs2.handleBlockVerbs2(chatId, bot)
 }
 
-fun callNextVerbs3(chatId: Long, bot: Bot) {
+private fun callNextVerbs3(chatId: Long, bot: Bot) {
     println("main callNextVerbs3: Переход к следующему состоянию блока глаголов 3")
     val currentState = Globals.userStates[chatId] ?: 0
     Globals.userStates[chatId] = currentState + 1
     Verbs3.handleBlockVerbs3(chatId, bot)
 }
 
-fun sendWelcomeMessage(chatId: Long, bot: Bot) {
+private fun sendWelcomeMessage(chatId: Long, bot: Bot) {
     println("main sendWelcomeMessage 162. Отправка приветственного сообщения")
     bot.sendMessage(
         chatId = ChatId.fromId(chatId),
@@ -304,7 +330,7 @@ fun sendWelcomeMessage(chatId: Long, bot: Bot) {
 
 }
 
-fun sendStartMenu(chatId: Long, bot: Bot) {
+private fun sendStartMenu(chatId: Long, bot: Bot) {
     println("main sendStartMenu 165. Отправка стартового меню")
     GlobalScope.launch {
         TelegramMessageService.updateOrSendMessage(
@@ -334,7 +360,7 @@ fun handleBlock(chatId: Long, bot: Bot, filePath: String, wordUz: String?, wordR
     }
 }
 
-fun generateReplacements(chatId: Long) {
+private fun generateReplacements(chatId: Long) {
     println("main generateReplacements 179.  извлекает пары из глобального хранилища, формирует список ключей и, если их достаточно, создаёт мапу замен для первых 9 элементов, сохраняя результат в глобальном реестре замен.")
     val userPairs = Globals.sheetColumnPairs[chatId]
     if (userPairs == null) return
@@ -346,7 +372,7 @@ fun generateReplacements(chatId: Long) {
     Globals.userReplacements[chatId] = replacements
 }
 
-fun sendPadezhSelection(chatId: Long, bot: Bot, filePath: String) {
+private fun sendPadezhSelection(chatId: Long, bot: Bot, filePath: String) {
     println("main sendPadezhSelection 185. Отправка меню выбора падежа")
     Globals.userPadezh.remove(chatId)
     Globals.userStates.remove(chatId)
@@ -373,12 +399,12 @@ fun sendPadezhSelection(chatId: Long, bot: Bot, filePath: String) {
     }
 }
 
-fun getPadezhColumnsForBlock(block: Int): Map<String, Int>? {
+private fun getPadezhColumnsForBlock(block: Int): Map<String, Int>? {
     println("main getPadezhColumnsForBlock 194. возвращает соответствующую мапу столбцов из глобальной конфигурации (Config.COLUMN_RANGES). Если для заданного блока данные отсутствуют, возвращается null ")
     return Config.COLUMN_RANGES[block]
 }
 
-fun getUserScoresForBlock(chatId: Long, filePath: String, PadezhColumns: Map<String, Int>): Map<String, Int> {
+private fun getUserScoresForBlock(chatId: Long, filePath: String, PadezhColumns: Map<String, Int>): Map<String, Int> {
     println("main getUserScoresForBlock 196. открывает Excel-файл по заданному пути, ищет на листе \"Состояние пользователя\" строку с нужным chatId и извлекает баллы для каждого падежа (из карты PadezhColumns), формируя и возвращая результирующую карту. Если файл или лист отсутствуют, возвращается пустая карта.")
     val file = File(filePath)
     if (!file.exists()) return emptyMap()
@@ -406,7 +432,7 @@ fun getUserScoresForBlock(chatId: Long, filePath: String, PadezhColumns: Map<Str
     return scores
 }
 
-fun generatePadezhSelectionButtons(currentBlock: Int, PadezhColumns: Map<String, Int>, userScores: Map<String, Int>): List<List<InlineKeyboardButton>> {
+private fun generatePadezhSelectionButtons(currentBlock: Int, PadezhColumns: Map<String, Int>, userScores: Map<String, Int>): List<List<InlineKeyboardButton>> {
     println("main generatePadezhSelectionButtons 207. создает кнопки для выбора падежа: для каждого падежа из карты она формирует кнопку с названием и текущим баллом пользователя, а затем добавляет кнопки навигации («⬅️ Предыдущий блок» и «➡️ Следующий блок») в зависимости от номера текущего блока.")
     val buttons = PadezhColumns.keys.map { PadezhName ->
         val score = userScores[PadezhName] ?: 0
@@ -421,7 +447,7 @@ fun generatePadezhSelectionButtons(currentBlock: Int, PadezhColumns: Map<String,
     return buttons
 }
 
-fun sendWordMessage(chatId: Long, bot: Bot, filePath: String) {
+private fun sendWordMessage(chatId: Long, bot: Bot, filePath: String) {
     println("main sendWordMessage 214. Отправка меню выбора слова")
     if (!File(filePath).exists()) {
         GlobalScope.launch {
@@ -454,7 +480,7 @@ fun sendWordMessage(chatId: Long, bot: Bot, filePath: String) {
     }
 }
 
-fun createWordSelectionKeyboardFromExcel(filePath: String, sheetName: String): InlineKeyboardMarkup {
+private fun createWordSelectionKeyboardFromExcel(filePath: String, sheetName: String): InlineKeyboardMarkup {
     println("main createWordSelectionKeyboardFromExcel 219. принимает путь к Excel-файлу и название листа, проверяет их наличие, выбирает случайные 10 строк из указанного листа, извлекает из каждой строки слова на узбекском и русском языках, создает для каждой пары кнопки, группирует их по 2 и возвращает готовую инлайн-клавиатуру для выбора слова.")
     val file = File(filePath)
     if (!file.exists()) {
@@ -476,7 +502,7 @@ fun createWordSelectionKeyboardFromExcel(filePath: String, sheetName: String): I
     return InlineKeyboardMarkup.create(buttons)
 }
 
-fun extractWordsFromCallback(data: String): Pair<String, String> {
+private fun extractWordsFromCallback(data: String): Pair<String, String> {
     println("main extractWordsFromCallback 233. принимает строку с callback-данными, извлекает из неё часть между \"word:(\" и \")\", затем делит полученную строку по разделителю \" - \" для получения слова на узбекском и русском языках, возвращая их в виде пары.")
     val content = data.substringAfter("word:(").substringBefore(")")
     val wordUz = content.substringBefore(" - ").trim()
@@ -513,7 +539,7 @@ fun addScoreForPadezh(chatId: Long, Padezh: String, filePath: String, block: Int
     }
 }
 
-fun XSSFColor.getRgbWithTint(): ByteArray? {
+private fun XSSFColor.getRgbWithTint(): ByteArray? {
     println("main XSSFColor.getRgbWithTint 266. Вход в функцию getRgbWithTint")
     val baseRgb = rgb ?: return null
     val tint = this.tint
@@ -527,31 +553,9 @@ fun XSSFColor.getRgbWithTint(): ByteArray? {
     return result
 }
 
-fun checkBlocksBeforeTest(chatId: Long, bot: Bot, filePath: String) {
-    println("main checkBlocksBeforeTest 277. проверяет, завершены ли все три блока пользователя перед запуском теста. Сначала она инициализирует состояния блоков, затем извлекает их статусы. Если все блоки завершены, вызывается функция для тестового блока (handleBlockTest). В противном случае формируется сообщение с перечнем незавершенных блоков и отправляется пользователю вместе с кнопкой для возврата к блокам.")
-    initializeUserBlockStates(chatId, filePath)
-    val (block1Completed, block2Completed, block3Completed) = Globals.userBlockCompleted[chatId] ?: Triple(false, false, false)
-    if (block1Completed && block2Completed && block3Completed) {
-        TestBlock.handleBlockTest(chatId, bot)
-    } else {
-        val notCompletedBlocks = mutableListOf<String>()
-        if (!block1Completed) notCompletedBlocks.add("Блок 1")
-        if (!block2Completed) notCompletedBlocks.add("Блок 2")
-        if (!block3Completed) notCompletedBlocks.add("Блок 3")
-        val messageText = "Вы не выполнили следующие блоки:\n" +
-                notCompletedBlocks.joinToString("\n") +
-                "\nПройдите их перед тестом."
-        GlobalScope.launch {
-            TelegramMessageService.updateOrSendMessage(
-                chatId = chatId,
-                text = messageText,
-                replyMarkup = Keyboards.returnToBlocksButton()
-            )
-        }
-    }
-}
 
-fun checkUserStateBlock3(chatId: Long, filePath: String): Boolean {
+
+private fun checkUserStateBlock3(chatId: Long, filePath: String): Boolean {
     println("main checkUserStateBlock3 284. проверяет, выполнены ли условия третьего блока для пользователя с заданным chatId. Для этого она:\n" +
             "\n" +
             "Проверяет, существует ли Excel-файл по указанному пути.\n" +
@@ -584,7 +588,7 @@ fun checkUserStateBlock3(chatId: Long, filePath: String): Boolean {
     }
 }
 
-fun initializeSheetColumnPairsFromFile(chatId: Long) {
+private fun initializeSheetColumnPairsFromFile(chatId: Long) {
     println("main initializeSheetColumnPairsFromFile 297. Инициализирует пустую карту пар для пользователя в глобальном хранилище.\n" +
             "Проверяет наличие Excel-файла (путь из Config.TABLE_FILE) и открывает его.\n" +
             "Для каждого из листов «Существительные», «Глаголы» и «Прилагательные»:\n" +
@@ -630,9 +634,10 @@ fun initializeUserBlockStates(chatId: Long, filePath: String) {
     val block2Completed = checkUserState(chatId, filePath, block = 2)
     val block3Completed = checkUserStateBlock3(chatId, filePath)
     Globals.userBlockCompleted[chatId] = Triple(block1Completed, block2Completed, block3Completed)
+    println("main initializeUserBlockStates состояние ${Globals.userBlockCompleted[chatId]}!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
 }
 
-fun checkUserState(chatId: Long, filePath: String, sheetName: String = "Состояние пользователя", block: Int = 1): Boolean {
+private fun checkUserState(chatId: Long, filePath: String, sheetName: String = "Состояние пользователя", block: Int = 1): Boolean {
     println("main checkUserState 239. проверяет, удовлетворяет ли состояние пользователя заданным условиям для конкретного блока. Для этого она:\n" +
             "Определяет диапазон столбцов для блока (блок 1: столбцы 1–6, блок 2: 7–12, блок 3: 13–18).\n" +
             "Проверяет, существует ли Excel-файл с данными, и открывает лист (по умолчанию \"Состояние пользователя\").\n" +
@@ -640,8 +645,8 @@ fun checkUserState(chatId: Long, filePath: String, sheetName: String = "Сост
             "Если все проверки проходят, функция возвращает true, иначе – false.\n")
     val columnRanges = mapOf(
         1 to (1..6),
-        2 to (7..12),
-        3 to (13..18)
+        2 to (7..12)
+        //3 to (13..18)
     )
     val columns = columnRanges[block] ?: return false
     val file = File(filePath)

@@ -1,5 +1,4 @@
 import com.github.kotlintelegrambot.Bot
-import com.github.kotlintelegrambot.entities.ChatId
 import com.github.kotlintelegrambot.keyboards.Keyboards
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch

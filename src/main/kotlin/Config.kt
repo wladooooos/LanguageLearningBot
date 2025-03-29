@@ -1,5 +1,7 @@
 package com.github.kotlintelegrambot.config
 
+import com.github.kotlintelegrambot.Bot
+
 object Config {
     // Токен для подключения к Telegram API
     //const val BOT_TOKEN: String = "7166917752:AAF0q8pmZBAmgUy_qYUMuR1gJBLaD36VSCE"
@@ -103,4 +105,12 @@ object Config {
         "Y9-Y13", "Z9-Z13", "AA9-AA13", "AB9-AB13", "AC9-AC13", "AD9-AD13",
         "AE9-AE12", "AF9-AF12", "AG9-AG12", "AH9-AH12", "AI9-AI12", "AJ9-AJ12"
     )
+
+    fun sendIncompleteBlocksAlert(bot: Bot, callbackQueryId: String) {
+        bot.answerCallbackQuery(
+            callbackQueryId = callbackQueryId,
+            text = "Для доступа к блоку завершит предыдущие блоки.",
+            showAlert = true
+        )
+    }
 }

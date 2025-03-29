@@ -34,7 +34,7 @@ object Adjectives2 {
         Globals.userReplacements.remove(chatId)
         Globals.sheetColumnPairs.remove(chatId)
         Globals.userStates.remove(chatId)
-        com.github.kotlintelegrambot.dispatcher.initializeSheetColumnPairsFromFile(chatId)
+        initializeSheetColumnPairsFromFile(chatId)
         handleBlockAdjective2(chatId, bot)
     }
 

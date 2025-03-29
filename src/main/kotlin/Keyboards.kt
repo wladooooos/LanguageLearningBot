@@ -165,4 +165,15 @@ object Keyboards {
         return InlineKeyboardMarkup.create(buttons)
     }
 
+    fun adjective1HintToggleKeyboard(isHintVisible: Boolean): InlineKeyboardMarkup {
+        println("Keyboards adjective1HintToggleKeyboard")
+        val baseButtons = listOf(
+            listOf(InlineKeyboardButton.CallbackData("Сменить набор слов", "change_words_adjective1")),
+            listOf(InlineKeyboardButton.CallbackData("Далее", "next:заглушкаbola:заглушкаребенок"))
+        )
+        val toggleText = if (isHintVisible) "Скрыть подсказку" else "Показать подсказку"
+        val toggleCallback = "toggleHintAdjective1:${isHintVisible}"
+        val toggleButtonRow = listOf(InlineKeyboardButton.CallbackData(toggleText, toggleCallback))
+        return InlineKeyboardMarkup.create(baseButtons + listOf(toggleButtonRow))
+    }
 }
