@@ -25,25 +25,6 @@ object Keyboards {
         return InlineKeyboardMarkup.create(buttons)
     }
 
-    // Финальное меню для блоков прилагательных
-    fun finalAdjectiveButtons(currentBlock: Int): InlineKeyboardMarkup {
-        println("Keyboards finalAdjectiveButtons")
-        val repeatCallback = if (currentBlock == 5) "block:adjective1" else "block:adjective2"
-        val changeWordsCallback = if (currentBlock == 5) "change_words_adjective1" else "change_words_adjective2"
-        val navigationButton = if (currentBlock == 5) {
-            InlineKeyboardButton.CallbackData("Следующий блок", "block:adjective2")
-        } else {
-            InlineKeyboardButton.CallbackData("Предыдущий блок", "block:adjective1")
-        }
-        val buttons = listOf(
-            listOf(InlineKeyboardButton.CallbackData("Повторить", repeatCallback)),
-            listOf(InlineKeyboardButton.CallbackData("Изменить набор слов", changeWordsCallback)),
-            //listOf(InlineKeyboardButton.CallbackData("Начальное меню", "main_menu")),
-            listOf(navigationButton)
-        )
-        return InlineKeyboardMarkup.create(buttons)
-    }
-
     // Финальное меню для остальных блоков
     fun finalButtons(wordUz: String?, wordRus: String?, currentBlock: Int): InlineKeyboardMarkup {
         println("Keyboards finalButtons")
@@ -165,15 +146,88 @@ object Keyboards {
         return InlineKeyboardMarkup.create(buttons)
     }
 
-    fun adjective1HintToggleKeyboard(isHintVisible: Boolean): InlineKeyboardMarkup {
+    fun adjective1HintToggleKeyboard(isHintVisible: Boolean, isLast: Boolean): InlineKeyboardMarkup {
         println("Keyboards adjective1HintToggleKeyboard")
-        val baseButtons = listOf(
-            listOf(InlineKeyboardButton.CallbackData("Сменить набор слов", "change_words_adjective1")),
-            listOf(InlineKeyboardButton.CallbackData("Далее", "next:заглушкаbola:заглушкаребенок"))
+        val baseButtons = mutableListOf(
+            listOf(InlineKeyboardButton.CallbackData("Сменить набор слов", "change_words_adjective1"))
         )
+
+        val navigationButton = if (isLast) {
+            InlineKeyboardButton.CallbackData("Следующий блок", "adjective2")
+        } else {
+            InlineKeyboardButton.CallbackData("Далее", "next:заглушкаbola:заглушкаребенок")
+        }
+
+        baseButtons.add(listOf(navigationButton))
+
         val toggleText = if (isHintVisible) "Скрыть подсказку" else "Показать подсказку"
-        val toggleCallback = "toggleHintAdjective1:${isHintVisible}"
+        val toggleCallback = "toggleHintAdjective1:$isHintVisible"
         val toggleButtonRow = listOf(InlineKeyboardButton.CallbackData(toggleText, toggleCallback))
+
         return InlineKeyboardMarkup.create(baseButtons + listOf(toggleButtonRow))
     }
+
+    fun adjective2HintToggleKeyboard(isHintVisible: Boolean, isLast: Boolean): InlineKeyboardMarkup {
+        println("Keyboards adjective2HintToggleKeyboard")
+        val baseButtons = mutableListOf(
+            listOf(InlineKeyboardButton.CallbackData("Сменить набор слов", "change_words_adjective2"))
+        )
+
+        val navigationButton = if (isLast) {
+            InlineKeyboardButton.CallbackData("Следующий блок", "block:verbs1")
+        } else {
+            InlineKeyboardButton.CallbackData("Далее", "next:заглушкаbola:заглушкаребенок")
+        }
+
+        baseButtons.add(listOf(navigationButton))
+
+        val toggleText = if (isHintVisible) "Скрыть подсказку" else "Показать подсказку"
+        val toggleCallback = "toggleHintAdjective2:$isHintVisible"
+        val toggleButtonRow = listOf(InlineKeyboardButton.CallbackData(toggleText, toggleCallback))
+
+        return InlineKeyboardMarkup.create(baseButtons + listOf(toggleButtonRow))
+    }
+
+//    fun adjective1HintToggleKeyboard(isHintVisible: Boolean): InlineKeyboardMarkup {
+//        println("Keyboards adjective1HintToggleKeyboard")
+//        val baseButtons = listOf(
+//            listOf(InlineKeyboardButton.CallbackData("Сменить набор слов", "change_words_adjective1")),
+//            listOf(InlineKeyboardButton.CallbackData("Далее", "next:заглушкаbola:заглушкаребенок"))
+//        )
+//        val toggleText = if (isHintVisible) "Скрыть подсказку" else "Показать подсказку"
+//        val toggleCallback = "toggleHintAdjective1:${isHintVisible}"
+//        val toggleButtonRow = listOf(InlineKeyboardButton.CallbackData(toggleText, toggleCallback))
+//        return InlineKeyboardMarkup.create(baseButtons + listOf(toggleButtonRow))
+//    }
+//
+//    fun adjective2HintToggleKeyboard(isHintVisible: Boolean): InlineKeyboardMarkup {
+//        println("Keyboards adjective1HintToggleKeyboard")
+//        val baseButtons = listOf(
+//            listOf(InlineKeyboardButton.CallbackData("Сменить набор слов", "change_words_adjective2")),
+//            listOf(InlineKeyboardButton.CallbackData("Далее", "next:заглушкаbola:заглушкаребенок"))
+//        )
+//        val toggleText = if (isHintVisible) "Скрыть подсказку" else "Показать подсказку"
+//        val toggleCallback = "toggleHintAdjective2:${isHintVisible}"
+//        val toggleButtonRow = listOf(InlineKeyboardButton.CallbackData(toggleText, toggleCallback))
+//        return InlineKeyboardMarkup.create(baseButtons + listOf(toggleButtonRow))
+//    }
+//
+//    // Финальное меню для блоков прилагательных
+//    fun finalAdjectiveButtons(currentBlock: Int): InlineKeyboardMarkup {
+//        println("Keyboards finalAdjectiveButtons")
+//        val repeatCallback = if (currentBlock == 5) "block:adjective1" else "adjective2"
+//        val changeWordsCallback = if (currentBlock == 5) "change_words_adjective1" else "change_words_adjective2"
+//        val navigationButton = if (currentBlock == 5) {
+//            InlineKeyboardButton.CallbackData("Следующий блок", "block:adjective2")
+//        } else {
+//            InlineKeyboardButton.CallbackData("Предыдущий блок", "block:adjective1")
+//        }
+//        val buttons = listOf(
+//            listOf(InlineKeyboardButton.CallbackData("Повторить", repeatCallback)),
+//            listOf(InlineKeyboardButton.CallbackData("Изменить набор слов", changeWordsCallback)),
+//            //listOf(InlineKeyboardButton.CallbackData("Начальное меню", "main_menu")),
+//            listOf(navigationButton)
+//        )
+//        return InlineKeyboardMarkup.create(buttons)
+//    }
 }

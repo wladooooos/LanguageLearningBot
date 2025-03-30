@@ -1,3 +1,4 @@
+import Adjectives2.markAdjective2AsCompleted
 import com.github.kotlintelegrambot.Bot
 import com.github.kotlintelegrambot.config.Config
 import com.github.kotlintelegrambot.dispatcher.initializeUserBlockStates
@@ -8,6 +9,7 @@ import com.github.kotlintelegrambot.keyboards.Keyboards
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import org.apache.poi.ss.usermodel.Cell
+import org.apache.poi.ss.usermodel.CellType
 import org.apache.poi.ss.usermodel.Row
 import org.apache.poi.ss.usermodel.Sheet
 import org.apache.poi.xssf.usermodel.XSSFColor
@@ -38,22 +40,17 @@ object Adjectives1 {
         handleBlockAdjective1(chatId, bot)
     }
 
-    fun callChangeWordsAdjective1(chatId: Long, bot: Bot) {
-        println("Adjectives1 callChangeWordsAdjective1: Сбрасывает слова и перезапускает блок прилагательных 1.")
-        Globals.userReplacements.remove(chatId)
-        Globals.sheetColumnPairs.remove(chatId)
-        Globals.userStates.remove(chatId)
-        initializeSheetColumnPairsFromFile(chatId)
-        handleBlockAdjective1(chatId, bot)
-    }
-
-    fun handleBlockAdjective1(chatId: Long, bot: Bot) {
+    fun handleBlockAdjective1(chatId: Long, bot: Bot, keepState: Boolean = false) {
         println("Adjectives1 handleBlockAdjective1: Управляет логикой прохождения блока прилагательных 1.")
         initializeReplacementsIfNeeded(chatId)
         val rangesForAdjectives = Config.ADJECTIVE_RANGES_1
         val currentState = Globals.userStates[chatId] ?: 0
+        // не сбрасываем состояние, если keepState == true
+        if (!keepState) {
+            Globals.userStates[chatId] = currentState
+        }
         if (currentState >= rangesForAdjectives.size) {
-            sendFinalButtonsForAdjectives(chatId, bot)
+            //sendFinalButtonsForAdjectives(chatId, bot)
             Globals.userReplacements.remove(chatId)
             return
         }
@@ -62,11 +59,17 @@ object Adjectives1 {
         Globals.currentRange[chatId] = currentRange
         val messageText = prepareAdjectiveMessage(chatId, bot, currentRange) ?: return
         val isLastRange = currentState == rangesForAdjectives.size - 1
-//        if (Globals.userStates[chatId] == null) {
-//            sendReplacementsMessage(chatId, bot)
-//        }
         sendAdjectiveBlockMessage(chatId, bot, messageText, isLastRange)
     }
+
+    fun callChangeWordsAdjective1(chatId: Long, bot: Bot) {
+        println("Adjectives1 callChangeWordsAdjective1: Смена набора слов без сброса состояния.")
+        Globals.userReplacements.remove(chatId)
+        Globals.sheetColumnPairs.remove(chatId)
+        initializeSheetColumnPairsFromFile(chatId)
+        handleBlockAdjective1(chatId, bot, keepState = true)
+    }
+
 
     private fun initializeReplacementsIfNeeded(chatId: Long) {
         println("Adjectives1 initializeReplacementsIfNeeded: Инициализирует замены, если они отсутствуют у пользователя.")
@@ -87,29 +90,23 @@ object Adjectives1 {
 
     private fun sendAdjectiveBlockMessage(chatId: Long, bot: Bot, messageText: String, isLastRange: Boolean) {
         println("Adjectives1 sendAdjectiveBlockMessage: Отправляет сообщение с кнопкой 'Далее' или финальное меню.")
-        if (isLastRange) {
-            GlobalScope.launch {
-                TelegramMessageService.updateOrSendMessageWithoutMarkdown(
-                    chatId = chatId,
-                    text = messageText,
-                    replyMarkup = Keyboards.adjective1HintToggleKeyboard(
-                        false  // по умолчанию подсказка скрыта
-                    )
-                )
-            }
-            sendFinalButtonsForAdjectives(chatId, bot)
+
+        val replyMarkup = if (isLastRange) {
+            markAdjective1AsCompleted(chatId, Config.TABLE_FILE)
+            Keyboards.adjective1HintToggleKeyboard(isHintVisible = false, isLast = true)
         } else {
-            GlobalScope.launch {
-                TelegramMessageService.updateOrSendMessageWithoutMarkdown(
-                    chatId = chatId,
-                    text = messageText,
-                    replyMarkup = Keyboards.adjective1HintToggleKeyboard(
-                        false  // по умолчанию подсказка скрыта
-                    )
-                )
-            }
+            Keyboards.adjective1HintToggleKeyboard(isHintVisible = false, isLast = false)
+        }
+
+        GlobalScope.launch {
+            TelegramMessageService.updateOrSendMessageWithoutMarkdown(
+                chatId = chatId,
+                text = messageText,
+                replyMarkup = replyMarkup
+            )
         }
     }
+
 
 
     fun generateReplacements(chatId: Long) {
@@ -136,34 +133,48 @@ object Adjectives1 {
         showHint: Boolean = false
     ): String {
         println("Adjectives1 generateAdjectiveMessage: Формирует текст сообщения для блока прилагательных с заменой цифр.")
-        val rawText = generateMessageFromRange(filePath, sheetName, range, null, null, showHint)
+
+        val sheetPairs = Globals.sheetColumnPairs.values.firstOrNull() ?: emptyMap()  // альтернатива, если chatId неизвестен
+        val rawText = generateMessageFromRange(
+            filePath = filePath,
+            sheetName = sheetName,
+            range = range,
+            wordUz = null,
+            wordRus = null,
+            showHint = showHint,
+            replacements = replacements,
+            sheetColumnPairs = sheetPairs
+        )
+
         val processedText = rawText.replace(Regex("[1-9]")) { match ->
             val digit = match.value.toInt()
             replacements[digit] ?: match.value
         }
+
         return processedText
     }
 
 
+
     // Отправка финального меню
-    fun sendFinalButtonsForAdjectives(chatId: Long, bot: Bot) {
-        println("Adjectives1 sendFinalButtonsForAdjectives: Отправляет финальное меню для завершения блока прилагательных.")
-        val currentBlock = Globals.userBlocks[chatId] ?: 5  // По умолчанию 5 (прилагательные 1)
-//        val changeWordsCallback = if (currentBlock == 5) "change_words_adjective1" else "change_words_adjective2"
-//
-//        val navigationButton = if (currentBlock == 5) {
-//            InlineKeyboardButton.CallbackData("Следующий блок", "block:adjective2")
-//        } else {
-//            InlineKeyboardButton.CallbackData("Предыдущий блок", "block:adjective1")
+//    fun sendFinalButtonsForAdjectives(chatId: Long, bot: Bot) {
+//        println("Adjectives1 sendFinalButtonsForAdjectives: Отправляет финальное меню для завершения блока прилагательных.")
+//        val currentBlock = Globals.userBlocks[chatId] ?: 5  // По умолчанию 5 (прилагательные 1)
+////        val changeWordsCallback = if (currentBlock == 5) "change_words_adjective1" else "change_words_adjective2"
+////
+////        val navigationButton = if (currentBlock == 5) {
+////            InlineKeyboardButton.CallbackData("Следующий блок", "block:adjective2")
+////        } else {
+////            InlineKeyboardButton.CallbackData("Предыдущий блок", "block:adjective1")
+////        }
+//        GlobalScope.launch {
+//            TelegramMessageService.updateOrSendMessageWithoutMarkdown(
+//            chatId = chatId,
+//            text = "Вы завершили все этапы работы с этим блоком прилагательных. Что будем делать дальше?",
+//            replyMarkup = Keyboards.finalAdjectiveButtons(Globals.userBlocks[chatId] ?: 5)
+//        )
 //        }
-        GlobalScope.launch {
-            TelegramMessageService.updateOrSendMessageWithoutMarkdown(
-            chatId = chatId,
-            text = "Вы завершили все этапы работы с этим блоком прилагательных. Что будем делать дальше?",
-            replyMarkup = Keyboards.finalAdjectiveButtons(Globals.userBlocks[chatId] ?: 5)
-        )
-        }
-    }
+//    }
 
     fun generateMessageFromRange(
         filePath: String,
@@ -171,13 +182,15 @@ object Adjectives1 {
         range: String,
         wordUz: String?,
         wordRus: String?,
-        showHint: Boolean = false
+        showHint: Boolean = false,
+        replacements: Map<Int, String>,
+        sheetColumnPairs: Map<String, String>
     ): String {
-        // ... загрузка и формирование текста из Excel, например:
         val file = File(filePath)
         if (!file.exists()) {
             throw IllegalArgumentException("Файл $filePath не найден")
         }
+
         val excelManager = ExcelManager(filePath)
         val result = excelManager.useWorkbook { workbook ->
             val sheet = workbook.getSheet(sheetName)
@@ -187,15 +200,29 @@ object Adjectives1 {
             val messageBody = cells.drop(1).joinToString("\n")
             listOf(firstCell, messageBody).filter { it.isNotBlank() }.joinToString("\n\n")
         }
+
         val finalText = if (showHint) {
-            // Показываем весь текст, удаляя маркеры
             result.replace("\$\$", "")
         } else {
-            // Заменяем текст между $$...$$ на звёздочку
-            result.replace(Regex("""\$\$.*?\$\$""", RegexOption.DOT_MATCHES_ALL), "*")
+            val hintBlock = buildReplacementPairsBlock(replacements, sheetColumnPairs)
+            result.replace(Regex("""\$\$.*?\$\$""", RegexOption.DOT_MATCHES_ALL), hintBlock)
         }
+
         return finalText
     }
+
+
+    private fun buildReplacementPairsBlock(
+        replacements: Map<Int, String>,
+        sheetColumnPairs: Map<String, String>
+    ): String {
+        val pairs = replacements.entries.mapNotNull { (_, uzWord) ->
+            val rusWord = sheetColumnPairs[uzWord]
+            if (rusWord != null) "$rusWord – $uzWord" else null
+        }
+        return if (pairs.isNotEmpty()) pairs.joinToString("\n") else "*"
+    }
+
 
 
 //    fun String.escapeMarkdownV2(): String {
@@ -464,4 +491,33 @@ object Adjectives1 {
         }
         return candidates.shuffled().take(3)
     }
+
+    fun markAdjective1AsCompleted(chatId: Long, filePath: String) {
+        println("🔹 markAdjective1AsCompleted: Помечает блок 'Прилагательные 1' как завершённый в листе 'Состояние пользователя'")
+        val excelManager = ExcelManager(filePath)
+        excelManager.useWorkbook { workbook ->
+            val sheet = workbook.getSheet("Состояние пользователя")
+                ?: throw IllegalArgumentException("Лист 'Состояние пользователя' не найден")
+
+            val userRow = sheet.find { row ->
+                val idCell = row.getCell(0)
+                val id = when (idCell?.cellType) {
+                    CellType.NUMERIC -> idCell.numericCellValue.toLong()
+                    CellType.STRING -> idCell.stringCellValue.toDoubleOrNull()?.toLong()
+                    else -> null
+                }
+                id == chatId
+            }
+
+            if (userRow != null) {
+                val cell = userRow.getCell(14) ?: userRow.createCell(14) // O = 15-я колонка = индекс 14
+                cell.setCellValue(1.0)
+                excelManager.safelySaveWorkbook(workbook)
+                println("✅ Прогресс по прилагательным 1 записан в колонку O.")
+            } else {
+                println("⚠️ Пользователь $chatId не найден на листе 'Состояние пользователя'")
+            }
+        }
+    }
+
 }

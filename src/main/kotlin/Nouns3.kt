@@ -79,10 +79,10 @@ object Nouns3 {
             saveUserProgressBlok3(chatId, filePath, currentRange)
         }
 
-        updateProgressIfNeeded(chatId, filePath, currentState)
-        if (isLastRange) {
-            updateUserProgressForMiniBlocks(chatId, filePath, shuffledRanges.indices.toList())
-        }
+//        updateProgressIfNeeded(chatId, filePath, currentState)
+//        if (isLastRange) {
+//            updateUserProgressForMiniBlocks(chatId, filePath, shuffledRanges.indices.toList())
+//        }
     }
 
     private fun initializeBlock3Ranges(chatId: Long): MutableList<String> {

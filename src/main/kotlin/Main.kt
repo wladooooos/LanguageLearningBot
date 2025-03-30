@@ -65,7 +65,8 @@ fun main() {
                     data == "nouns3Change_word_random" -> Nouns3.callRandomWord(chatId, bot)
                     data == "test" -> TestBlock.callTestBlock(chatId, bot)
                     data == "adjective1" -> Adjectives1.callAdjective1(chatId, bot, callbackQuery.id)
-                    data == "adjective2" -> Adjectives2.callAdjective2(chatId, bot)
+                    data == "adjective2" -> Adjectives2.callAdjective2(chatId, bot, callbackQuery.id)
+
                     data == "verbs1" -> Verbs1.callVerbs1(chatId, bot)
                     data == "verbs2" -> Verbs2.callVerbs2(chatId, bot)
                     data == "verbs3" -> Verbs3.callVerbs3(chatId, bot)
@@ -137,11 +138,39 @@ fun main() {
                                 newHintVisible
                             )
                             // Формируем новую клавиатуру, не передавая wordUz и wordRus
-                            val newKeyboard = Keyboards.adjective1HintToggleKeyboard(newHintVisible)
+                            val currentState = Globals.userStates[chatId] ?: 0
+                            val isLastRange = currentState == Config.ADJECTIVE_RANGES_1.size - 1
+                            val newKeyboard = Keyboards.adjective1HintToggleKeyboard(newHintVisible, isLastRange)
+
                             TelegramMessageService.updateOrSendMessageWithoutMarkdown(chatId, newMessageText, newKeyboard)
                         }
                     }
-
+                    data.startsWith("toggleHintAdjective2:") -> {
+                        val parts = data.split(":")
+                        if (parts.size >= 2) {
+                            val currentHintVisible = parts[1].toBoolean()
+                            val newHintVisible = !currentHintVisible
+                            val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
+                            val filePath = Config.TABLE_FILE
+                            // Получаем сохранённые для данного чата лист и диапазон
+                            val sheetName = Globals.currentSheetName[chatId]
+                                ?: throw IllegalStateException("Нет текущего листа для chatId=$chatId")
+                            val range = Globals.currentRange[chatId]
+                                ?: throw IllegalStateException("Нет текущего диапазона для chatId=$chatId")
+                            val newMessageText = Adjectives2.generateAdjectiveMessage(
+                                filePath,
+                                sheetName,
+                                range,
+                                Globals.userReplacements[chatId]!!,
+                                newHintVisible
+                            )
+                            // Формируем новую клавиатуру, не передавая wordUz и wordRus
+                            val currentState = Globals.userStates[chatId] ?: 0
+                            val isLastRange = currentState == Config.ADJECTIVE_RANGES_2.size - 1
+                            val newKeyboard = Keyboards.adjective2HintToggleKeyboard(newHintVisible, isLastRange)
+                            TelegramMessageService.updateOrSendMessageWithoutMarkdown(chatId, newMessageText, newKeyboard)
+                        }
+                    }
                 }
             }
         }
@@ -633,8 +662,11 @@ fun initializeUserBlockStates(chatId: Long, filePath: String) {
     val block1Completed = checkUserState(chatId, filePath, block = 1)
     val block2Completed = checkUserState(chatId, filePath, block = 2)
     val block3Completed = checkUserStateBlock3(chatId, filePath)
+    val adjective1Completed = checkUserState(chatId, filePath, block = 4)
+    val adjective2Completed = checkUserState(chatId, filePath, block = 5)
     Globals.userBlockCompleted[chatId] = Triple(block1Completed, block2Completed, block3Completed)
-    println("main initializeUserBlockStates состояние ${Globals.userBlockCompleted[chatId]}!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+    Globals.userAdjectiveCompleted[chatId] = Pair(adjective1Completed, adjective2Completed)
+    println("Состояние прилагательных ${Globals.userAdjectiveCompleted[chatId]} !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
 }
 
 private fun checkUserState(chatId: Long, filePath: String, sheetName: String = "Состояние пользователя", block: Int = 1): Boolean {
@@ -645,8 +677,9 @@ private fun checkUserState(chatId: Long, filePath: String, sheetName: String = "
             "Если все проверки проходят, функция возвращает true, иначе – false.\n")
     val columnRanges = mapOf(
         1 to (1..6),
-        2 to (7..12)
-        //3 to (13..18)
+        2 to (7..12),
+        4 to (14..14),
+        5 to (15..15)
     )
     val columns = columnRanges[block] ?: return false
     val file = File(filePath)
