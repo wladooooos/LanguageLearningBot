@@ -64,10 +64,12 @@ fun main() {
                     data == "nouns3" -> Nouns3.callNouns3(chatId, bot)
                     data == "nouns3Change_word_random" -> Nouns3.callRandomWord(chatId, bot)
                     data == "test" -> TestBlock.callTestBlock(chatId, bot)
+
                     data == "adjective1" -> Adjectives1.callAdjective1(chatId, bot, callbackQuery.id)
                     data == "adjective2" -> Adjectives2.callAdjective2(chatId, bot, callbackQuery.id)
 
-                    data == "verbs1" -> Verbs1.callVerbs1(chatId, bot)
+                    data == "verbs1" -> Verbs1.callVerbs1(chatId, bot, callbackQuery.id)
+                    data == "change_words_verbs1" -> Verbs1.callChangeWordsVerbs1(chatId, bot)
                     data == "verbs2" -> Verbs2.callVerbs2(chatId, bot)
                     data == "verbs3" -> Verbs3.callVerbs3(chatId, bot)
                     data == "change_word" -> callChangeWord(chatId, bot)
@@ -170,6 +172,13 @@ fun main() {
                             val newKeyboard = Keyboards.adjective2HintToggleKeyboard(newHintVisible, isLastRange)
                             TelegramMessageService.updateOrSendMessageWithoutMarkdown(chatId, newMessageText, newKeyboard)
                         }
+                    }
+                    data.startsWith("toggleHintVerbs1:") -> {
+                        // Получаем текущее состояние подсказки (false = скрыта, true = отображена)
+                        val currentHintVisible = data.removePrefix("toggleHintVerbs1:").toBooleanStrictOrNull() ?: false
+                        // Инвертируем состояние: если сейчас подсказка скрыта, то показываем её, иначе скрываем
+                        val newHintVisible = !currentHintVisible
+                        Verbs1.handleToggleHintVerbs1(chatId, bot, newValue = newHintVisible)
                     }
                 }
             }

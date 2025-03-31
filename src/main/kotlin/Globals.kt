@@ -11,8 +11,9 @@ object Globals {
     val userReplacements = mutableMapOf<Long, Map<Int, String>>() // Хранение замен для чисел (1-9) для каждого пользователя
     val userReplacementsAdjective2 = mutableMapOf<Long, Map<Int, String>>()
     var sheetColumnPairs = mutableMapOf<Long, Map<String, String>>() // Глобальная переменная для хранения пар лист/столбец (ключ и значение — строки)
-    val userRandomVerb = mutableMapOf<Long, String>()
+    val userVerb = mutableMapOf<Long, Pair<String, String>>()
     val userMainMessageId = mutableMapOf<Long, Int>()
+    val userVerbsHintVisibility = mutableMapOf<Long, Boolean>()
     // Добавляем переменные для хранения текущего листа и диапазона для редактирования сообщения с подсказкой:
     val currentSheetName = mutableMapOf<Long, String>()
     val currentRange = mutableMapOf<Long, String>()

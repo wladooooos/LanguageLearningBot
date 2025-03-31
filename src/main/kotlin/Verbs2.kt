@@ -16,7 +16,7 @@ object Verbs2 {
 
     fun callVerbs2(chatId: Long, bot: Bot) {
         println("callVerbs2: Обработка блока глаголов 2")
-        Globals.userRandomVerb.remove(chatId)
+        Globals.userVerb.remove(chatId)
         Globals.userBlocks[chatId] = 8
         Globals.userStates[chatId] = 0
         Verbs2.handleBlockVerbs2(chatId, bot)
@@ -139,9 +139,9 @@ object Verbs2 {
             when (c) {
                 '*' -> {
                     // Получаем уже сохранённый глагол или генерируем новый, если его ещё нет
-                    val replacement = Globals.userRandomVerb.getOrPut(chatId) { getRandomVerb() }
-                    println("aaaXX Замена символа *. Замена: \"$replacement\"")
-                    sb.append(replacement)
+                    //val replacement = Globals.userVerb.getOrPut(chatId) { getRandomVerb() }
+//                    println("aaaXX Замена символа *. Замена: \"$replacement\"")
+//                    sb.append(replacement)
                 }
                 '§' -> {
                     val prev = sb.lastOrNull() ?: ' '
